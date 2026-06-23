@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+// Version is the per-mutation hybrid-logical-clock version stamped by the writing
+// coordinator. See design/22_versioning_and_hlc.md and design/03_kv_store.md
+// "Conflict handling" for the deterministic tie-break order.
+message Version {
+  uint64 hlc_physical_ms = 1;
+  uint32 hlc_logical = 2;
+  string writer_cluster_id = 3;
+  string writer_member_id = 4;
+  uint64 writer_sequence = 5;
+  bytes vector_clock = 6;
+}
+
+// MutationId is a stable, idempotent identifier for a logical mutation. It is derived
+// from (writer_cluster_id, writer_member_id, writer_sequence) or, when the client
+// supplies an idempotency key, from that key. Equal ids collapse retries into one
+// logical mutation.
+message MutationId {
+  string value = 1;
+}
+
+enum ConflictState {
+  CONFLICT_STATE_UNSPECIFIED = 0;
+  CONFLICT_NONE = 1;
+  CONFLICT_RESOLVED = 2;
+  CONFLICT_SIBLINGS_PRESENT = 3;
+}
+
+enum Completeness {
+  COMPLETENESS_UNSPECIFIED = 0;
+  COMPLETE = 1;
+  PARTIAL = 2;
+  BEST_EFFORT = 3;
+}
+
+enum ReadSource {
+  READ_SOURCE_UNSPECIFIED = 0;
+  LOCAL_DURABLE = 1;
+  LOCAL_DYNAMIC_CACHE = 2;
+  FETCHED_CLOSEST_HOLDER = 3;
+  ROUTED_RANGE = 4;
+  GLOBAL_REMOTE = 5;
+}
+
+// ResponseMeta is attached to every user-visible read so the declared consistency
+// and completeness mode is never hidden (design/01_architecture.md "Design constraints").
+message ResponseMeta {
+  string served_by_cluster_id = 1;
+  string served_by_member_id = 2;
+  ReadSource source = 3;
+  optional Version observed_version = 4;
+  ConflictState conflict_state = 5;
+  Completeness completeness = 6;
+  int64 observed_at_unix_ms = 7;
+  repeated string warnings = 8;
+}
+
+// RecordKind distinguishes the data model a stored record belongs to.
+enum RecordKind {
+  RECORD_KIND_UNSPECIFIED = 0;
+  RECORD_KIND_KV = 1;
+  RECORD_KIND_GRAPH_NODE = 2;
+  RECORD_KIND_GRAPH_EDGE = 3;
+  RECORD_KIND_VECTOR = 4;
+}
+
+// MutationKind is the operation a mutation-log entry records.
+enum MutationKind {
+  MUTATION_KIND_UNSPECIFIED = 0;
+  MUTATION_KIND_PUT = 1;
+  MUTATION_KIND_DELETE = 2;
+}
+
+// ExternalPointer references a value stored outside wavesdb (object storage). Reserved
+// for a future offload path; v1 always stores values inline (design/02 "Value size policy").
+message ExternalPointer {
+  string uri = 1;
+  uint64 size = 2;
+  bytes checksum = 3;
+}
+
+// ValueBody carries a record value either inline or as an external pointer. v1 uses
+// `inline` exclusively; the oneof keeps the wire format ready for object-storage offload.
+message ValueBody {
+  oneof body {
+    bytes inline = 1;
+    ExternalPointer external = 2;
+  }
+}
+
+// StoredRecord is the versioned envelope for every replicated record (design/02_storage_wavesdb.md
+// "Local record format"). It is the authoritative on-disk form in the data column families.
+message StoredRecord {
+  bytes logical_key = 1;
+  ValueBody value = 2;
+  Version version = 3;
+  optional int64 expires_at_unix_ms = 4;
+  bool tombstone = 5;
+  RecordKind kind = 6;
+  string namespace = 7;
+  string origin_cluster_id = 8;
+  string origin_member_id = 9;
+  int64 local_apply_unix_ms = 10;
+  ConflictState conflict_state = 11;
+}
+
+// LatestPointer is the fast-read summary of the current winner for a key, plus any
+// concurrent siblings (design/02 "Latest pointer"). It is derived state, rebuildable
+// from the versioned records and the mutation log.
+message LatestPointer {
+  Version winner = 1;
+  repeated Version sibling_versions = 2;
+  optional int64 expires_at_unix_ms = 3;
+  bool tombstone = 4;
+  uint64 local_generation = 5;
+}
+
+// MutationEnvelope is the mutation-log entry appended on every local write and applied
+// remote mutation (design/02 "Mutation log"). It drives repair, subscriptions, global
+// replication, index maintenance, and crash recovery.
+message MutationEnvelope {
+  string mutation_id = 1;
+  MutationKind kind = 2;
+  bytes logical_key = 3;
+  ValueBody value = 4;
+  Version version = 5;
+  optional int64 expires_at_unix_ms = 6;
+  bool tombstone = 7;
+  string namespace = 8;
+  string origin_cluster_id = 9;
+  string origin_member_id = 10;
+  uint64 origin_sequence = 11;
+  repeated string causal_parents = 12;
+}

@@ -1,0 +1,172 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// ReplicaClass distinguishes durable replicas (counted for write durability) from disposable
+// dynamic-cache copies (design/05 replica types).
+enum ReplicaClass {
+  REPLICA_CLASS_UNSPECIFIED = 0;
+  REPLICA_CLASS_NEARBY_DURABLE = 1;
+  REPLICA_CLASS_DYNAMIC_CACHE = 2;
+}
+
+// StoreReplicaRequest carries a versioned record to a nearby peer for durable replication
+// (design/05 "StoreReplica protocol").
+message StoreReplicaRequest {
+  string namespace = 1;
+  bytes key = 2;
+  StoredRecord record = 3;
+  ReplicaClass replica_class = 4;
+  string coordinator_member_id = 5;
+  string mutation_id = 6;
+}
+
+message StoreReplicaResponse {
+  bool durable = 1;
+  string member_id = 2;
+  Version applied_version = 3;
+  ConflictState conflict_state = 4;
+}
+
+// --- Dynamic cache (M5, design/05 "Dynamic cache read path" / "Subscription protocol") ---
+
+message SubscriptionOffer {
+  string source_member_id = 1;
+  string source_data_addr = 2;
+}
+
+message FetchReplicaRequest {
+  string namespace = 1;
+  bytes key = 2;
+  optional Version min_version = 3;
+  bool want_subscription_offer = 4;
+}
+
+message FetchReplicaResponse {
+  bool found = 1;
+  StoredRecord record = 2;
+  repeated string alternate_holder_member_ids = 3;
+  optional SubscriptionOffer subscription_offer = 4;
+}
+
+message SubscribeKeyRequest {
+  string namespace = 1;
+  bytes key = 2;
+  Version from_version = 3;
+  string subscriber_member_id = 4;
+  int64 requested_lease_ms = 5;
+}
+
+// CacheUpdate is a server-streamed update pushed to a key subscriber. snapshot_required tells the
+// subscriber to re-fetch (resync) rather than apply an incremental update.
+message CacheUpdate {
+  string subscription_id = 1;
+  string namespace = 2;
+  bytes key = 3;
+  StoredRecord record = 4;
+  uint64 stream_sequence = 5;
+  bool snapshot_required = 6;
+}
+
+// ScanLocalRequest asks a holder to scan its local store over a subrange (routed-eventual scan).
+message ScanLocalRequest {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  uint32 limit = 4;
+}
+
+message ScanLocalRow {
+  bytes key = 1;
+  bytes value = 2;
+  Version version = 3;
+  optional int64 expires_at_unix_ms = 4;
+}
+
+message ScanLocalResponse {
+  repeated ScanLocalRow rows = 1;
+}
+
+// BackfillRequest streams a holder's full records for a namespace, paginated by cursor, so a joining
+// node can bootstrap an "everywhere"-replicated namespace (design/05 node sync).
+message BackfillRequest {
+  string namespace = 1;
+  bytes cursor = 2; // empty starts at the beginning; echo back next_cursor to continue
+  uint32 limit = 3; // max records per page (server-capped)
+}
+
+message BackfillResponse {
+  repeated StoredRecord records = 1;
+  bytes next_cursor = 2; // empty => the end of the namespace was reached
+}
+
+// ReplicationService is the internal replica-write + cache API (mTLS-only in production, design/15).
+service ReplicationService {
+  rpc StoreReplica(StoreReplicaRequest) returns (StoreReplicaResponse);
+  rpc FetchReplica(FetchReplicaRequest) returns (FetchReplicaResponse);
+  rpc SubscribeKey(SubscribeKeyRequest) returns (stream CacheUpdate);
+  rpc ScanLocal(ScanLocalRequest) returns (ScanLocalResponse);
+  rpc Backfill(BackfillRequest) returns (BackfillResponse);
+}
+
+// --- Global active-active replication (M7, design/06) ---
+
+// GlobalMutationId is the stable, idempotent identity of an originated mutation across clusters:
+// receivers ignore an id they have already applied (replay protection).
+message GlobalMutationId {
+  string cluster_id = 1;
+  string member_id = 2;
+  uint64 writer_sequence = 3;
+}
+
+// GlobalMutation is one mutation shipped to a peer cluster. The StoredRecord envelope carries the
+// version, tombstone flag, and origin expiry, so graph/vector records flow through unchanged.
+message GlobalMutation {
+  GlobalMutationId id = 1;
+  string namespace = 2;
+  bytes key = 3;
+  StoredRecord record = 4;
+  uint32 partition = 5;
+}
+
+// PushGlobalRequest batches mutations to a peer (unary; works over HTTP/1.1, unlike a bidi stream).
+message PushGlobalRequest {
+  repeated GlobalMutation mutations = 1;
+}
+
+message PushGlobalAck {
+  uint64 applied_count = 1;
+}
+
+message KeyRange {
+  string namespace = 1;
+  bytes start = 2;
+  bytes end = 3;
+}
+
+message RangeHash {
+  KeyRange range = 1;
+  bytes hash = 2;
+}
+
+message RangeSummaryRequest {
+  repeated KeyRange ranges = 1;
+}
+
+message RangeSummaryResponse {
+  repeated RangeHash hashes = 1;
+}
+
+message FetchRangeRequest {
+  KeyRange range = 1;
+}
+
+// GlobalReplication ships local mutations to peer clusters asynchronously and reconciles via
+// anti-entropy (design/06). No cross-cluster consensus on the hot path.
+service GlobalReplication {
+  rpc PushGlobal(PushGlobalRequest) returns (PushGlobalAck);
+  rpc RangeSummary(RangeSummaryRequest) returns (RangeSummaryResponse);
+  rpc FetchRange(FetchRangeRequest) returns (stream GlobalMutation);
+}

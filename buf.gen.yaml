@@ -1,0 +1,19 @@
+# Regenerates the SDK's vendored protobuf messages + Connect client stubs into internal/gen from the
+# .proto contract in ./proto (the single source of truth, vendored from the WaveSpan server). Managed
+# mode rewrites go_package to the SDK's internal prefix. Run from the repo root:
+#
+#   buf generate
+#
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package_prefix
+      value: github.com/yannick/wavespan-sdk/internal/gen
+plugins:
+  - local: protoc-gen-go
+    out: internal/gen
+    opt: paths=source_relative
+  - local: protoc-gen-connect-go
+    out: internal/gen
+    opt: paths=source_relative

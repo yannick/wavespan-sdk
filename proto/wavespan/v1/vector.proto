@@ -1,0 +1,156 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+option go_package = "github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1";
+
+import "wavespan/v1/common.proto";
+import "wavespan/v1/cypher.proto";
+
+// VectorRecord is a raw embedding vector, optionally attached to a graph node (design/08
+// "Vector record"). Stored in CFVectorRaw and versioned/replicated via the StoredRecord pipeline.
+message VectorRecord {
+  string collection = 1;
+  string vector_id = 2;
+  repeated float values = 3;
+  string dtype = 4; // "float32" in v1
+  uint32 dimensions = 5;
+  map<string, Value> metadata = 6;
+  string graph_node_id = 7; // optional graph attachment
+  Version version = 8;
+  bool tombstone = 9;
+  bytes payload = 10; // caller's opaque proto payload (vector-as-key value)
+}
+
+// VectorMeta is the lightweight metadata record at /vector/{collection}/meta/{vector_id}.
+message VectorMeta {
+  string collection = 1;
+  string vector_id = 2;
+  uint32 dimensions = 3;
+  string metric = 4;
+  string graph_node_id = 5;
+}
+
+message PutVectorRequest {
+  VectorRecord record = 1;
+}
+
+message PutVectorResponse {}
+
+// SearchLocalRequest asks a node to search ONLY the vectors it holds locally and return its
+// fragment of the top-k (design/08 "scatter to partition-holders"). The query coordinator merges
+// fragments from every holder. exact=true scans the collection; otherwise the ANN live index is
+// used with ef_search. Hits are exact-scored from the stored vector regardless, so the merged
+// global top-k is exact over the candidate union.
+message SearchLocalRequest {
+  string index_name = 1;
+  repeated float query = 2;
+  int32 k = 3;
+  int32 ef_search = 4;
+  bool exact = 5;
+  bool rerank = 6; // over-fetch ANN candidates before exact scoring
+}
+
+// VectorHit is one local search result (exact-scored).
+message VectorHit {
+  string collection = 1;
+  string vector_id = 2;
+  string graph_node_id = 3;
+  double distance = 4; // smaller = closer (ranking)
+  double score = 5;    // larger = more similar (user-facing)
+}
+
+message SearchLocalResponse {
+  repeated VectorHit hits = 1;
+}
+
+// --- Vector-as-key API (design/29): the embedding is the key, an opaque proto is the payload. All
+// vector fields are repeated float (self-describing, validated against the collection's dimensions);
+// the byte form is an internal key encoding clients never see.
+
+message VectorPutReq {
+  string collection = 1;
+  repeated float vector = 2;
+  bytes payload = 3;
+  optional int64 ttl_ms = 4; // reserved (TTL plumbing is a later phase)
+}
+message VectorPutRes {
+  Version version = 1;
+}
+
+message VectorGetReq {
+  string collection = 1;
+  repeated float vector = 2; // exact lookup by embedding
+}
+message VectorGetRes {
+  bool found = 1;
+  bytes payload = 2;
+}
+
+message VectorDeleteReq {
+  string collection = 1;
+  repeated float vector = 2;
+}
+message VectorDeleteRes {}
+
+// VectorSearchReq is a cluster-wide k-nearest-neighbour query. The query vector is `query`; its
+// length must equal the collection's dimensions.
+message VectorSearchReq {
+  string collection = 1;
+  repeated float query = 2;
+  uint32 k = 3;
+  uint32 nprobe = 4;        // buckets to probe (Phase 2 routing); 0 = scatter to all holders
+  uint32 ef_search = 5;     // HNSW beam width
+  bool rerank = 6;          // exact-rescore ANN candidates
+  bool include_payload = 7; // return payloads inline
+}
+message Neighbor {
+  repeated float vector = 1;
+  bytes payload = 2;
+  double distance = 3; // smaller = closer
+  double score = 4;    // larger = more similar
+  string vector_id = 5;
+}
+message VectorSearchRes {
+  repeated Neighbor neighbors = 1;
+  ResponseMeta meta = 2;
+  Completeness completeness = 3;
+}
+
+// FloatVector wraps a vector for nested repeated-float fields (sampling, centroids).
+message FloatVector {
+  repeated float values = 1;
+}
+
+// IvfCentroids is the trained, shared quantizer artifact for a collection (design/29 Phase 3.5):
+// every node installs the same centroids so they agree on buckets. Versioned by qver — a retrain
+// produces a higher qver and new buckets; old vectors stay put and re-advertise under the new qver.
+message IvfCentroids {
+  string collection = 1;
+  uint32 qver = 2;
+  uint32 dim = 3;
+  bool l2 = 4; // true = Euclidean; false = angular/dot
+  repeated FloatVector centroids = 5;
+  int64 trained_at_unix_ms = 6;
+}
+
+// SampleVectorsReq asks a node for a reservoir sample of its local vectors (for IVF training).
+message SampleVectorsReq {
+  string collection = 1;
+  uint32 limit = 2;
+}
+message SampleVectorsRes {
+  repeated FloatVector vectors = 1;
+}
+
+// VectorService ingests raw vectors, serves per-node local search fragments, the cluster-wide
+// vector-as-key API, and IVF-training sampling (design/08, design/29).
+service VectorService {
+  rpc Put(PutVectorRequest) returns (PutVectorResponse);
+  rpc SearchLocal(SearchLocalRequest) returns (SearchLocalResponse);
+  rpc VectorPut(VectorPutReq) returns (VectorPutRes);
+  rpc VectorGet(VectorGetReq) returns (VectorGetRes);
+  rpc VectorDelete(VectorDeleteReq) returns (VectorDeleteRes);
+  rpc VectorSearch(VectorSearchReq) returns (VectorSearchRes);
+  rpc SampleVectors(SampleVectorsReq) returns (SampleVectorsRes);
+}

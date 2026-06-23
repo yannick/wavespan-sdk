@@ -1,0 +1,254 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// CollectionService is the public replicated-collections API (design/30): sets, hash tables, and
+// sorted sets over the CP consensus tier. Writes are linearizable through the owning shard's leader;
+// reads default to bounded-stale local reads (set linearizable=true to opt into a quorum read). Every
+// response carries ResponseMeta so the consistency mode is never hidden. A mutation that targets a
+// collection of a different datatype fails with FailedPrecondition (WRONGTYPE).
+service CollectionService {
+  // Set
+  rpc SAdd(SAddRequest) returns (CountResult);
+  rpc SRem(KeysRequest) returns (CountResult);
+  rpc SIsMember(MemberRequest) returns (BoolResult);
+  rpc SCard(CardRequest) returns (CountResult);
+  rpc SMembers(RangeRequest) returns (MembersResult);
+
+  // Hash
+  rpc HSet(HSetRequest) returns (CountResult);
+  rpc HDel(KeysRequest) returns (CountResult);
+  rpc HGet(MemberRequest) returns (ValueResult);
+  rpc HLen(CardRequest) returns (CountResult);
+  rpc HGetAll(RangeRequest) returns (FieldsResult);
+  rpc HIncrBy(HIncrByRequest) returns (Int64Result);            // atomic integer counter
+  rpc HIncrByFloat(HIncrByFloatRequest) returns (DoubleResult); // atomic float counter
+
+  // Sorted set
+  rpc ZAdd(ZAddRequest) returns (CountResult);
+  rpc ZRem(KeysRequest) returns (CountResult);
+  rpc ZScore(MemberRequest) returns (ScoreResult);
+  rpc ZCard(CardRequest) returns (CountResult);
+  rpc ZRange(RangeRequest) returns (ScoredMembersResult);
+
+  // Bulk / namespace
+  // BulkRemove removes a list of members from many collections at once — a named list, or (when
+  // collections is empty) every collection in the namespace. Type-agnostic (works on sets, hashes, and
+  // sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
+  // eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
+  rpc BulkRemove(BulkRemoveRequest) returns (BulkRemoveResult);
+
+  // TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
+  // — a read-only operator view (design/30 §12).
+  rpc TierInfo(TierInfoRequest) returns (TierInfoResult);
+
+  // AdmitLearner asks this node (a member of the shard) to admit replica_id, reachable at target, as a
+  // non-voting learner of shard_id — the server side of demand-fill (design/30 §9). A node that does
+  // not host a collection's shard calls this on a peer that does, then starts its local learner.
+  rpc AdmitLearner(AdmitLearnerRequest) returns (AdmitLearnerResponse);
+
+  // ProposeForward is the node-side leader-routing hop (design/30 §13.13): a node that is not the
+  // owning shard's leader forwards the (already-encoded) write to a peer until the leader accepts, so
+  // the client can stay oblivious and call any node. The receiving node applies it locally only (never
+  // re-forwards), so there are no loops. Internal — not a client surface.
+  rpc ProposeForward(ProposeForwardRequest) returns (CountResult);
+}
+
+message ProposeForwardRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes command = 3; // the engine-encoded write command (opaque on the wire)
+}
+
+message HIncrByRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes field = 3;
+  int64 delta = 4;
+  optional string idempotency_key = 5;
+}
+
+message HIncrByFloatRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes field = 3;
+  double delta = 4;
+  optional string idempotency_key = 5;
+}
+
+message TierInfoRequest {}
+
+message TierInfoResult {
+  ResponseMeta meta = 1;
+  bool enabled = 2;
+  string node_host_id = 3;
+  string raft_address = 4;
+  uint64 self_replica_id = 5;
+  bool voter = 6; // false = spot/edge node (non-voting learner)
+  // active consensus tunables
+  uint64 rtt_ms = 7;
+  uint64 election_rtt = 8;
+  uint64 heartbeat_rtt = 9;
+  uint64 snapshot_entries = 10;
+  uint64 compaction_overhead = 11;
+  uint64 sweep_ms = 12;
+  // per-shard leader status for shards this node hosts
+  repeated ShardStatus shards = 13;
+}
+
+message ShardStatus {
+  uint64 shard_id = 1;
+  uint64 replica_id = 2; // this node's replica id in the shard
+  uint64 leader_replica_id = 3;
+  bool has_leader = 4;
+  bool is_leader = 5; // this node currently leads the shard
+  bool is_data = 6; // true = data shard, false = meta shard
+}
+
+message BulkRemoveRequest {
+  string namespace = 1;
+  repeated bytes collections = 2; // empty = every collection in the namespace
+  repeated bytes members = 3;
+}
+
+message BulkRemoveResult {
+  ResponseMeta meta = 1;
+  repeated BulkRemoveEntry results = 2;
+}
+
+message BulkRemoveEntry {
+  bytes collection = 1;
+  uint64 removed = 2;
+  string error = 3; // empty = success
+}
+
+message Int64Result {
+  ResponseMeta meta = 1;
+  int64 value = 2;
+}
+
+message DoubleResult {
+  ResponseMeta meta = 1;
+  double value = 2;
+}
+
+message AdmitLearnerRequest {
+  uint64 shard_id = 1;
+  uint64 replica_id = 2;
+  string target = 3; // the joining node's Raft transport address
+}
+
+message AdmitLearnerResponse {
+  ResponseMeta meta = 1;
+}
+
+// FieldValue is a hash field/value pair.
+message FieldValue {
+  bytes field = 1;
+  bytes value = 2;
+}
+
+// ScoredMember is a sorted-set member and its score.
+message ScoredMember {
+  bytes member = 1;
+  double score = 2;
+}
+
+// --- requests (shared shapes across datatypes) ---
+
+message SAddRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  repeated bytes members = 3;
+  // ttl_ms, when set, makes each added member expire after the given duration (log-driven, design/30 §10).
+  optional int64 ttl_ms = 4;
+  // idempotency_key dedupes a retried write so it applies exactly once (design/30 §13.12).
+  optional string idempotency_key = 5;
+}
+
+// KeysRequest removes members/fields (SRem, HDel, ZRem).
+message KeysRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  repeated bytes keys = 3;
+  optional string idempotency_key = 4;
+}
+
+// MemberRequest reads a single member/field (SIsMember, HGet, ZScore).
+message MemberRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bytes member = 3;
+  bool linearizable = 4;
+}
+
+// CardRequest reads a cardinality (SCard, HLen, ZCard).
+message CardRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  bool linearizable = 3;
+}
+
+// RangeRequest enumerates a collection (SMembers, HGetAll, ZRange).
+message RangeRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  int32 limit = 3; // 0 = all
+  bool linearizable = 4;
+}
+
+message HSetRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  repeated FieldValue fields = 3;
+  optional string idempotency_key = 4;
+}
+
+message ZAddRequest {
+  string namespace = 1;
+  bytes collection = 2;
+  repeated ScoredMember members = 3;
+  optional string idempotency_key = 4;
+}
+
+// --- responses ---
+
+message CountResult {
+  ResponseMeta meta = 1;
+  uint64 count = 2;
+  bytes data = 3; // opaque result payload (used by ProposeForward to carry an HIncr new value)
+}
+
+message BoolResult {
+  ResponseMeta meta = 1;
+  bool value = 2;
+}
+
+message ValueResult {
+  ResponseMeta meta = 1;
+  bool found = 2;
+  bytes value = 3;
+}
+
+message ScoreResult {
+  ResponseMeta meta = 1;
+  bool found = 2;
+  double score = 3;
+}
+
+message MembersResult {
+  ResponseMeta meta = 1;
+  repeated bytes members = 2;
+}
+
+message FieldsResult {
+  ResponseMeta meta = 1;
+  repeated FieldValue fields = 2;
+}
+
+message ScoredMembersResult {
+  ResponseMeta meta = 1;
+  repeated ScoredMember members = 2;
+}

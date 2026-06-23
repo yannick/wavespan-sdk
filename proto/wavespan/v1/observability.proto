@@ -1,0 +1,383 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+option go_package = "github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1";
+
+import "wavespan/v1/common.proto";
+import "wavespan/v1/admin.proto";
+import "wavespan/v1/cypher.proto";
+
+// --- Live gossip observability (design/26, design/11) ---
+
+// GossipKind classifies a gossip event.
+enum GossipKind {
+  GOSSIP_KIND_UNSPECIFIED = 0;
+  GOSSIP_PING = 1;
+  GOSSIP_ACK = 2;
+  GOSSIP_INDIRECT = 3;
+  GOSSIP_SUSPECT = 4;
+  GOSSIP_ALIVE = 5;
+  GOSSIP_UNREACHABLE = 6;
+  GOSSIP_HOLDER_SUMMARY = 7;
+  GOSSIP_LATENCY_EDGE = 8;
+  GOSSIP_MEMBERSHIP_DELTA = 9;
+  GOSSIP_CONFIG_DELTA = 10;
+}
+
+// GossipDirection is the direction of a gossip event relative to this node.
+enum GossipDirection {
+  GOSSIP_DIRECTION_UNSPECIFIED = 0;
+  GOSSIP_SEND = 1;
+  GOSSIP_RECV = 2;
+  GOSSIP_INTERNAL = 3; // a local state transition (no wire send)
+}
+
+// GossipFilter narrows the stream server-side (design/26).
+message GossipFilter {
+  repeated GossipKind kinds = 1;
+  repeated string peers = 2;
+  GossipDirection direction = 3;
+  string namespace = 4;
+}
+
+// GossipPayloadSummary is the DECODED summary of a gossip payload — never raw record bytes
+// (design/15 redaction).
+message GossipPayloadSummary {
+  double rtt_ms = 1;
+  string new_state = 2;
+  uint64 watermark = 3;
+  uint64 approx_count = 4;
+  double ewma_ms = 5;
+  double p95_ms = 6;
+  repeated string added_members = 7;
+  repeated string removed_members = 8;
+  uint32 payload_size_bytes = 9;
+}
+
+// GossipRecord is one observed gossip event.
+message GossipRecord {
+  GossipKind kind = 1;
+  GossipDirection direction = 2;
+  string peer = 3;
+  int64 at_unix_ms = 4;
+  uint64 seq = 5;
+  GossipPayloadSummary summary = 6;
+}
+
+// GapMarker signals dropped events when a subscriber falls behind.
+message GapMarker {
+  uint64 dropped_count = 1;
+  int64 since_unix_ms = 2;
+}
+
+// GossipEvent is a streamed record or a gap marker.
+message GossipEvent {
+  oneof event {
+    GossipRecord record = 1;
+    GapMarker gap = 2;
+  }
+}
+
+message StreamGossipRequest {
+  GossipFilter filter = 1;
+  bool backfill = 2; // replay the matching ring buffer before tailing live
+}
+
+// --- Data inspection (design/26, design/11) ---
+
+// Keyspace selects which logical keyspace to inspect.
+enum Keyspace {
+  KEYSPACE_UNSPECIFIED = 0;
+  KEYSPACE_KV = 1;
+  KEYSPACE_GRAPH = 2;
+  KEYSPACE_VECTOR = 3;
+}
+
+// HolderClass classifies why a member holds a key.
+enum HolderClass {
+  HOLDER_CLASS_UNSPECIFIED = 0;
+  HOLDER_ORIGIN = 1;
+  HOLDER_DURABLE = 2;
+  HOLDER_DYNAMIC_CACHE = 3;
+}
+
+message InspectHolder {
+  string member_id = 1;
+  HolderClass holder_class = 2;
+  Version version = 3;
+  ConflictState conflict = 4;
+  int64 replication_lag_ms = 5;
+  string peer_cluster_id = 6;
+  int64 global_repl_lag_ms = 7;
+}
+
+message InspectSibling {
+  Version version = 1;
+  bool tombstone = 2;
+  bytes value = 3; // redacted unless include_value + admin
+}
+
+message InspectKey {
+  string logical_path = 1;
+  string key_hash = 2; // base64url(blake3(namespace+key))
+  Version version = 3;
+  ConflictState conflict = 4;
+  bool tombstone = 5;
+  optional int64 expires_at_unix_ms = 6;
+  bytes value = 7; // redacted unless include_value + admin
+  repeated InspectSibling siblings = 8;
+  repeated InspectHolder holders = 9;
+  bytes logical_key = 10; // raw key bytes (within the namespace), for exact admin delete from the UI
+}
+
+message InspectTrailer {
+  uint64 rows_returned = 1;
+  Completeness final_completeness = 2;
+  repeated string warnings = 3;
+}
+
+// InspectRow streams a header, then keys, then a trailer.
+message InspectRow {
+  oneof row {
+    ResponseMeta header = 1;
+    InspectKey key = 2;
+    InspectTrailer trailer = 3;
+  }
+}
+
+message InspectLocalRequest {
+  Keyspace keyspace = 1;
+  string namespace = 2;
+  bytes prefix = 3;
+  bytes start_key = 4;
+  bytes end_key = 5;
+  uint32 limit = 6;
+  bool include_value = 7;
+  // cluster_wide fans the scan out to every alive member of THIS cluster and merges by key (latest
+  // version wins; the holders list shows which nodes hold each key). false = this node's store only.
+  // Cross-CLUSTER resolution is InspectGlobal, not this flag.
+  bool cluster_wide = 8;
+}
+
+message InspectGlobalRequest {
+  Keyspace keyspace = 1;
+  string namespace = 2;
+  bytes key = 3;
+  bool include_value = 4;
+  bool include_peer_clusters = 5;
+}
+
+// --- Cluster view ---
+
+message RangeRepairStatus {
+  bytes range_start = 1;
+  bytes range_end = 2;
+  uint32 under_replicated = 3;
+}
+
+message GetClusterViewRequest {}
+
+message GetClusterViewResponse {
+  repeated MemberState members = 1;
+  repeated LatencyEdge edges = 2;
+  repeated RangeRepairStatus repair = 3;
+  uint64 under_replicated_estimate = 4;
+}
+
+// --- Visual graph explorer (design/26 node explorer) ---
+
+// GraphNode is a property-graph node for visualization. Property values are redacted unless the
+// request includes include_value with an admin role.
+message GraphNode {
+  string node_id = 1;
+  repeated string labels = 2;
+  map<string, Value> properties = 3;
+}
+
+// GraphEdge is a directed relationship between two nodes.
+message GraphEdge {
+  string edge_id = 1;
+  string source = 2;
+  string target = 3;
+  string type = 4;
+}
+
+message GraphExploreRequest {
+  string graph_id = 1;
+  string seed_node_id = 2; // optional; empty starts from the whole graph (bounded by limit)
+  uint32 depth = 3;        // BFS hops from the seed (0 => just the seed / first page)
+  uint32 limit = 4;        // max nodes returned (server-capped)
+  bool include_value = 5;  // reveal property values (admin only)
+}
+
+message GraphExploreResponse {
+  repeated GraphNode nodes = 1;
+  repeated GraphEdge edges = 2;
+  bool truncated = 3; // more nodes exist than the limit returned
+}
+
+// GraphSubgraph induces the sub-graph spanned by an explicit set of node ids (plus optional
+// neighbor expansion). It backs "render Cypher results in the explorer": a Cypher RETURN yields node
+// ids as strings, the UI collects them, and this resolves the full nodes + the edges among them.
+// Ids that don't resolve to a live node are ignored.
+message GraphSubgraphRequest {
+  string graph_id = 1;
+  repeated string node_ids = 2;
+  uint32 neighbor_depth = 3; // 0 = exactly the given nodes; N = also pull N hops of neighbors
+  bool include_value = 4;    // reveal property values (admin only)
+}
+
+// LoadSampleDatasetRequest loads a small, open-licensed demo graph into graph_id for exploration.
+// Gated by WAVESPAN_DISABLE_SAMPLE_DATASET (default: available). Idempotent — re-running overwrites
+// the same node/edge ids.
+message LoadSampleDatasetRequest {
+  string graph_id = 1; // empty => "g" (the UI default graph)
+}
+
+message LoadSampleDatasetResponse {
+  bool ok = 1;
+  string error = 2;          // populated (with ok=false) when the loader is disabled or fails
+  uint32 nodes_created = 3;
+  uint32 edges_created = 4;
+  string dataset_name = 5;   // e.g. "Movies"
+  string license = 6;        // the dataset's open licence
+  string attribution = 7;    // provenance / attribution line
+}
+
+// ObservabilityService powers the embedded node UI and wavespanctl introspection (design/26).
+// Mounted on the admin port behind admin auth; values are redacted by default.
+service ObservabilityService {
+  rpc StreamGossip(StreamGossipRequest) returns (stream GossipEvent);
+  rpc InspectLocal(InspectLocalRequest) returns (stream InspectRow);
+  rpc InspectGlobal(InspectGlobalRequest) returns (stream InspectRow);
+  rpc GetClusterView(GetClusterViewRequest) returns (GetClusterViewResponse);
+  rpc GraphExplore(GraphExploreRequest) returns (GraphExploreResponse);
+  // GraphSubgraph resolves the sub-graph induced by a set of node ids (+ optional neighbor hops),
+  // so Cypher query results (which return node ids as strings) can be rendered in the explorer.
+  rpc GraphSubgraph(GraphSubgraphRequest) returns (GraphExploreResponse);
+  // LoadSampleDataset loads a small open-licensed demo graph for exploration. Admin-only and gated
+  // by WAVESPAN_DISABLE_SAMPLE_DATASET (returns ok=false with an error when disabled).
+  rpc LoadSampleDataset(LoadSampleDatasetRequest) returns (LoadSampleDatasetResponse);
+  // AdminPut writes a KV record for testing from the node UI, coordinated by a chosen cluster
+  // member (target_member_id) so the operator can pick which node originates the write.
+  rpc AdminPut(AdminPutRequest) returns (AdminPutResponse);
+  // AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
+  // coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
+  rpc AdminDelete(AdminDeleteRequest) returns (AdminDeleteResponse);
+  // GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
+  // serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
+  // UI Config tab and cross-node config inspection.
+  rpc GetNodeConfig(GetNodeConfigRequest) returns (NodeConfig);
+  // AdminSetTunable sets a runtime override for a tunable on this node and gossips it cluster-wide
+  // (LWW by version). Hot tunables apply live; static ones report requires_restart.
+  rpc AdminSetTunable(AdminSetTunableRequest) returns (AdminSetTunableResponse);
+}
+
+// TunableState is one tunable's effective state on a node (used by the Config tab).
+message TunableState {
+  string key = 1;            // dotted key, e.g. "ttl.sweepInterval"
+  string group = 2;          // subsystem group
+  string value = 3;          // current effective value, canonical string
+  string default_value = 4;  // built-in default
+  string source = 5;         // default | file | env | runtime
+  string kind = 6;           // duration | int | int64 | bytes | float | bool | string
+  string category = 7;       // static | hot
+  string doc = 8;            // what it controls
+  string why = 9;            // why it defaults to its value
+  uint64 version = 10;       // runtime-override version (0 if not runtime-set)
+  string env_var = 11;       // the WAVESPAN_TUNABLE_* override name
+  string override_scope = 12; // "" (not overridden) | "node" (local pin) | "cluster" (gossiped)
+}
+
+// NodeConfig is a node's full effective tunable set.
+message NodeConfig {
+  string cluster_id = 1;
+  string member_id = 2;
+  repeated TunableState tunables = 3;
+}
+
+// ConfigService is peer-reachable on the DATA port (unlike the admin-only ObservabilityService) so
+// any node can read another node's effective config and accept a node-local tunable pin. The admin
+// GetNodeConfig / node-local AdminSetTunable forward here.
+service ConfigService {
+  rpc GetConfig(GetConfigRequest) returns (NodeConfig);
+  // SetTunable pins a node-local override on this node (no gossip). The admin AdminSetTunable
+  // forwards here when cluster_wide=false and a non-self target is chosen.
+  rpc SetTunable(SetTunableRequest) returns (SetTunableResponse);
+}
+
+message GetConfigRequest {}
+
+message SetTunableRequest {
+  string key = 1;
+  string value = 2;
+}
+
+message SetTunableResponse {
+  bool ok = 1;
+  string error = 2;
+  bool requires_restart = 3;
+  uint64 version = 4;
+}
+
+// GetNodeConfigRequest selects which node's config to read (empty = the serving node).
+message GetNodeConfigRequest {
+  string target_member_id = 1;
+}
+
+// AdminSetTunableRequest sets a runtime override for one tunable. cluster_wide=true applies on this
+// node and gossips to every node (LWW). cluster_wide=false pins it on target_member_id only (empty =
+// the serving node) without gossiping — a node-local override that also resists incoming cluster deltas.
+message AdminSetTunableRequest {
+  string key = 1;
+  string value = 2;
+  string target_member_id = 3; // node-local target (cluster_wide=false); empty = serving node
+  bool cluster_wide = 4;
+}
+
+// AdminSetTunableResponse reports the outcome of a runtime tunable change.
+message AdminSetTunableResponse {
+  bool ok = 1;
+  string error = 2;
+  bool requires_restart = 3; // true for static tunables (stored as desired-state, applied on restart)
+  uint64 version = 4;
+}
+
+// AdminPutRequest is a test/admin KV write issued from the node UI (design/26). The write is
+// forwarded to target_member_id's data port so that member becomes the write coordinator/origin;
+// an empty target_member_id means the node serving this request coordinates.
+message AdminPutRequest {
+  string namespace = 1;
+  bytes key = 2;
+  bytes value = 3;
+  optional int64 ttl_ms = 4;
+  string target_member_id = 5;
+}
+
+// AdminPutResponse reports the outcome of an AdminPut, including which member coordinated it.
+message AdminPutResponse {
+  bool ok = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+  string coordinator_member_id = 4;
+  string error = 5;
+}
+
+// AdminDeleteRequest is a test/admin KV delete (tombstone write) issued from the node UI Data
+// Browser. Like AdminPut it is forwarded to target_member_id's data port so that member becomes
+// the write coordinator/origin; an empty target_member_id means the serving node coordinates.
+message AdminDeleteRequest {
+  string namespace = 1;
+  bytes key = 2;
+  string target_member_id = 3;
+}
+
+// AdminDeleteResponse reports the outcome of an AdminDelete, including which member coordinated it.
+message AdminDeleteResponse {
+  bool ok = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+  string coordinator_member_id = 4;
+  string error = 5;
+}

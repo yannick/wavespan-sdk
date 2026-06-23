@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+option go_package = "github.com/yannick/wavespan/proto/wavespan/v1;wavespanv1";
+
+import "wavespan/v1/common.proto";
+
+// Value is a Cypher property value (design/07 "Property model"). Nested list/map enable JSON-like
+// properties.
+message Value {
+  oneof value {
+    bool null = 1; // true => explicit null (the field's presence distinguishes null from unset)
+    bool bool_value = 2;
+    int64 int_value = 3;
+    double double_value = 4;
+    string string_value = 5;
+    bytes bytes_value = 6;
+    ValueList list_value = 7;
+    ValueMap map_value = 8;
+  }
+}
+
+message ValueList {
+  repeated Value values = 1;
+}
+
+message ValueMap {
+  map<string, Value> entries = 1;
+}
+
+// NodeRecord is a property-graph node (design/07 "Node record"). Stored in CFGraphData behind a
+// node key; the bytes are wrapped in the M01 StoredRecord envelope for versioning/replication.
+message NodeRecord {
+  string graph_id = 1;
+  string node_id = 2;
+  repeated string labels = 3;
+  map<string, Value> properties = 4;
+  Version version = 5;
+  bool tombstone = 6;
+}
+
+// EdgeRecord is a directed, typed relationship (design/07 "Edge record").
+message EdgeRecord {
+  string graph_id = 1;
+  string edge_id = 2;
+  string start_node = 3;
+  string end_node = 4;
+  string type = 5;
+  map<string, Value> properties = 6;
+  Version version = 7;
+  bool tombstone = 8;
+}
+
+// QueryConsistency declares the consistency a Cypher query was served at (design/07 "Query
+// metadata"). v1 is eventual-only.
+enum QueryConsistency {
+  QUERY_CONSISTENCY_UNSPECIFIED = 0;
+  QUERY_CONSISTENCY_EVENTUAL = 1;
+}
+
+// QueryMeta is the honest metadata attached to every Cypher result (design/07). partial_graph_possible
+// is true when the query touched more than one pod and could therefore observe partial graph state.
+message QueryMeta {
+  string served_by_cluster_id = 1;
+  repeated string participating_members = 2;
+  QueryConsistency consistency = 3;
+  Completeness completeness = 4;
+  bool used_cache = 5;
+  bool partial_graph_possible = 6;
+  repeated string warnings = 7;
+}
+
+// CypherRequest runs a query (design/07 "Cypher service").
+message CypherRequest {
+  string graph_id = 1;
+  string query = 2;
+  map<string, Value> parameters = 3;
+}
+
+// CypherRow is one result row: named columns -> values.
+message CypherRow {
+  map<string, Value> columns = 1;
+}
+
+// CypherResult streams rows followed by a terminal QueryMeta.
+message CypherResult {
+  oneof msg {
+    CypherRow row = 1;
+    QueryMeta meta = 2;
+  }
+}
+
+service Cypher {
+  rpc Query(CypherRequest) returns (stream CypherResult);
+}

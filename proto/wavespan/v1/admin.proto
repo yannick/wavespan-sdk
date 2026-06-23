@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// MemberLiveness mirrors internal/membership.State.
+enum MemberLiveness {
+  MEMBER_LIVENESS_UNSPECIFIED = 0;
+  MEMBER_ALIVE = 1;
+  MEMBER_SUSPECT = 2;
+  MEMBER_UNREACHABLE = 3;
+  MEMBER_DEAD = 4;
+  MEMBER_FORGOTTEN = 5;
+}
+
+// Member is a participant's identity and addressing (design/04 "Member identity").
+message Member {
+  string cluster_id = 1;
+  string member_id = 2;
+  string storage_uuid = 3;
+  string node_name = 4;
+  string zone = 5;
+  string region = 6;
+  string geo = 7;
+  string gossip_addr = 8;
+  string data_addr = 9;
+  string admin_addr = 10;
+}
+
+// MemberState is a member plus its liveness, exchanged on gossip.
+message MemberState {
+  Member member = 1;
+  MemberLiveness state = 2;
+  uint64 incarnation = 3;
+  int64 last_seen_unix_ms = 4;
+}
+
+// LatencyEdge is a directed latency-graph edge (design/04 "Latency graph").
+message LatencyEdge {
+  string from_member_id = 1;
+  string to_member_id = 2;
+  double ewma_rtt_ms = 3;
+  double p95_rtt_ms = 4;
+  double packet_loss = 5;
+  int64 last_success_unix_ms = 6;
+  int64 last_failure_unix_ms = 7;
+  uint32 sample_count = 8;
+}
+
+// HolderSummary is a compact per-range holder advertisement gossiped to avoid broadcast
+// (design/04 "Holder summaries"). Populated at M4; the envelope ships now.
+message HolderSummary {
+  string namespace = 1;
+  string range_id = 2;
+  string member_id = 3;
+  bytes bloom_filter = 4;
+  uint64 approximate_key_count = 5;
+  Version low_watermark = 6;
+  Version high_watermark = 7;
+  int64 generated_at_unix_ms = 8;
+}
+
+// --- Gossip service (internal SWIM transport) ---
+
+// ConfigDelta is a runtime tunable override gossiped epidemically and merged last-write-wins by
+// (version, origin). Each node piggybacks the override set it knows on every gossip round, so a
+// change made on any node converges across the cluster in O(log N) rounds.
+message ConfigDelta {
+  string key = 1;     // tunable key, e.g. "ttl.sweepInterval"
+  string value = 2;   // canonical string value
+  uint64 version = 3; // monotonic version (unix-ms based) for LWW
+  string origin = 4;  // member id that set it (tie-break when versions are equal)
+}
+
+// HeldBuckets advertises the coarse vector buckets a member currently holds for a collection, so a
+// kNN query routes only to the nodes holding its probed buckets (design/29 Phase 2). It is an
+// explicit, removable set (recomputed from the store), unlike the add-only holder bloom.
+message HeldBuckets {
+  string member_id = 1;
+  string collection = 2;
+  uint32 qver = 3; // quantizer version (buckets from different versions are distinct)
+  repeated uint32 buckets = 4;
+  int64 generated_at_unix_ms = 5;
+}
+
+message GossipExchangeRequest {
+  Member from = 1;
+  repeated MemberState members = 2;
+  repeated HolderSummary holder_summaries = 3;
+  repeated ConfigDelta config_deltas = 4;
+  repeated HeldBuckets held_buckets = 5;
+}
+
+message GossipExchangeResponse {
+  Member from = 1;
+  repeated MemberState members = 2;
+  repeated HolderSummary holder_summaries = 3;
+  repeated ConfigDelta config_deltas = 4;
+  repeated HeldBuckets held_buckets = 5;
+}
+
+// IndirectExchangeRequest asks the receiver to relay a gossip exchange to target_gossip_addr
+// on the caller's behalf (SWIM indirect probe).
+message IndirectExchangeRequest {
+  string target_gossip_addr = 1;
+  GossipExchangeRequest payload = 2;
+}
+
+service GossipService {
+  rpc Exchange(GossipExchangeRequest) returns (GossipExchangeResponse);
+  rpc IndirectExchange(IndirectExchangeRequest) returns (GossipExchangeResponse);
+}
+
+// --- Admin service (read-only introspection; design/14) ---
+
+message GetMembershipRequest {}
+message GetMembershipResponse {
+  repeated MemberState members = 1;
+}
+
+message GetLatencyGraphRequest {}
+message GetLatencyGraphResponse {
+  repeated LatencyEdge edges = 1;
+}
+
+service AdminService {
+  rpc GetMembership(GetMembershipRequest) returns (GetMembershipResponse);
+  rpc GetLatencyGraph(GetLatencyGraphRequest) returns (GetLatencyGraphResponse);
+}

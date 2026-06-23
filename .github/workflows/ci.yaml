@@ -1,0 +1,33 @@
+# wavespan-sdk CI: build + test the standalone Go client SDK, and verify the vendored stubs in
+# internal/gen are in sync with ./proto. No private dependencies — the SDK depends only on
+# protobuf + Connect.
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: go.sum
+      - name: Install buf + codegen plugins (pinned to match committed stubs)
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.66.1
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Proto gate (regenerate vendored stubs, fail on drift)
+        run: |
+          buf generate
+          git diff --exit-code internal/gen
+      - name: Vet
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+      - name: Test
+        run: go test ./...

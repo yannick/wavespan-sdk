@@ -1,0 +1,133 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// KvService is the public key-value API (design/03_kv_store.md). Put/Get/Delete are eventually
+// consistent; every response carries ResponseMeta so the consistency mode is never hidden.
+service KvService {
+  rpc Put(PutRequest) returns (PutResult);
+  rpc Get(GetRequest) returns (GetResult);
+  rpc MultiGet(MultiGetRequest) returns (MultiGetResult);
+  rpc Delete(DeleteRequest) returns (DeleteResult);
+  rpc Scan(ScanRequest) returns (stream ScanResponse);
+}
+
+message PutRequest {
+  string namespace = 1;
+  bytes key = 2;
+  bytes value = 3;
+  optional int64 ttl_ms = 4;
+  // idempotency_key: a retry with the same key collapses to one logical mutation.
+  optional string idempotency_key = 5;
+  // require_origin_plus_one defaults true; the write ACKs only after a nearby durable replica.
+  bool require_origin_plus_one = 6;
+}
+
+message PutResult {
+  ResponseMeta meta = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+  bool geo_spillover = 4;
+}
+
+message GetRequest {
+  string namespace = 1;
+  bytes key = 2;
+  bool allow_dynamic_cache = 3; // default true; cache path lands at M5
+  bool hide_expired_on_read = 4;
+}
+
+message GetResult {
+  ResponseMeta meta = 1;
+  bool found = 2;
+  bytes value = 3;
+  optional int64 expires_at_unix_ms = 4;
+}
+
+// MultiGetRequest reads many keys of one namespace in a single round-trip, amortizing the RPC +
+// HTTP/2 + serialization overhead that dominates a per-key Get (design/03 read path, throughput).
+message MultiGetRequest {
+  string namespace = 1;
+  repeated bytes keys = 2;
+  bool hide_expired_on_read = 3;
+}
+
+// MultiGetResult returns one GetResult per requested key, in request order.
+message MultiGetResult {
+  repeated GetResult results = 1;
+}
+
+message DeleteRequest {
+  string namespace = 1;
+  bytes key = 2;
+  optional string idempotency_key = 3;
+  bool require_origin_plus_one = 4;
+}
+
+message DeleteResult {
+  ResponseMeta meta = 1;
+  Version version = 2;
+  uint32 acked_nearby_replicas = 3;
+}
+
+// ScanMode selects the range-scan strategy (design/03 "Range scans").
+enum ScanMode {
+  SCAN_MODE_UNSPECIFIED = 0;
+  CACHE_FAST = 1;      // local cache/durable only; fast, may be incomplete; never COMPLETE
+  CACHE_COMPLETE = 2;  // local cache, COMPLETE only with a valid coverage certificate
+  ROUTED_EVENTUAL = 3; // contact known holders per subrange and merge
+  LOCAL_ONLY = 4;      // local store only (debugging/analytics)
+}
+
+message ScanRequest {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  uint32 limit = 4;
+  ScanMode mode = 5;
+}
+
+// ScanHeader is the first message of a range scan stream; it declares the actual completeness so a
+// partial cache scan is never silently presented as complete (design/03 "Do not silently return").
+message ScanHeader {
+  ResponseMeta meta = 1;
+  ScanMode mode = 2;
+  Completeness completeness = 3;
+}
+
+message ScanRow {
+  bytes key = 1;
+  bytes value = 2;
+  Version version = 3;
+  optional int64 expires_at_unix_ms = 4;
+}
+
+message ScanTrailer {
+  uint64 rows_returned = 1;
+  Completeness final_completeness = 2;
+  repeated string warnings = 3;
+}
+
+message ScanResponse {
+  oneof msg {
+    ScanHeader header = 1;
+    ScanRow row = 2;
+    ScanTrailer trailer = 3;
+  }
+}
+
+// RangeCoverageCertificate lets a node claim a cache-complete scan over [start_key, end_key): it is
+// issued by the range owner to a subscriber with an active range subscription or recent snapshot
+// (design/03 "Cache range coverage certificate"). A cache-complete scan reports COMPLETE only with
+// a valid (current-epoch, unexpired, covering) certificate.
+message RangeCoverageCertificate {
+  string namespace = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  string owner_member_id = 4;
+  uint64 owner_epoch = 5;
+  Version high_watermark = 6;
+  int64 valid_until_unix_ms = 7;
+}
