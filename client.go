@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"connectrpc.com/connect"
 	"github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1/wavespanv1connect"
+	"golang.org/x/net/http2"
 )
 
 // defaultDialTimeout bounds connection establishment for the SDK's default HTTP client. It does NOT
@@ -36,9 +38,9 @@ type Options struct {
 	// Token, when non-empty, is sent as "Authorization: Bearer <token>" on every request.
 	Token string
 
-	// HTTPClient overrides the transport. Supply an h2c-capable client here if you need HTTP/2
-	// cleartext; the Connect protocol otherwise works over the default HTTP/1.1 client for both
-	// unary and server-streaming calls. When set, TLS is assumed to be handled by this client.
+	// HTTPClient overrides the transport. The default already uses HTTP/2 (ALPN over TLS, h2c over
+	// plaintext); set this only to customize it (e.g. force HTTP/1.1, or use a shared client). When
+	// set, TLS is assumed to be handled by this client.
 	HTTPClient connect.HTTPClient
 
 	// UserAgent overrides the User-Agent header (default: "wavespan-go").
@@ -127,9 +129,26 @@ func normalizeBaseURL(endpoint string, tlsEnabled bool) string {
 	return scheme + "://" + endpoint
 }
 
-// newHTTPClient builds the default transport. HTTP/1.1 is sufficient for the Connect protocol
-// (including server streaming); TLS is wired only when a config is supplied.
+// newHTTPClient builds the default transport. Both paths use HTTP/2, so concurrent calls multiplex
+// over one connection instead of serializing per-connection on HTTP/1.1:
+//   - TLS: the standard transport negotiates HTTP/2 via ALPN (ForceAttemptHTTP2).
+//   - plaintext: an h2c (HTTP/2 cleartext) transport, since Go's stdlib won't do h2c automatically.
+//
+// Connect also works over HTTP/1.1; supply Options.HTTPClient to override either default.
 func newHTTPClient(tlsCfg *tls.Config) *http.Client {
+	if tlsCfg == nil {
+		// h2c: speak HTTP/2 over a plain TCP connection (the "http" scheme). Mirrors the server's
+		// H2CHandler so plaintext dev/cluster traffic is multiplexed, not HTTP/1.1.
+		return &http.Client{Transport: &http2.Transport{
+			AllowHTTP: true, // permit the "http" scheme
+			DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr) // plain TCP, no TLS
+			},
+			ReadIdleTimeout: 30 * time.Second,
+			PingTimeout:     10 * time.Second,
+		}}
+	}
 	tr := &http.Transport{
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          100,

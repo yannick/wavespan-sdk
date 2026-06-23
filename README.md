@@ -160,8 +160,9 @@ c, _ := wavespan.Dial(wavespan.Options{
 })
 ```
 
-For HTTP/2 cleartext (h2c), supply your own `Options.HTTPClient`; the default client uses HTTP/1.1,
-which the Connect protocol supports for both unary and server-streaming calls.
+The default transport uses **HTTP/2** on both paths so concurrent calls multiplex over one
+connection: TLS negotiates HTTP/2 via ALPN, and plaintext endpoints use h2c (HTTP/2 cleartext).
+Connect also works over HTTP/1.1 — set `Options.HTTPClient` to override the transport entirely.
 
 ## Regenerating the stubs
 

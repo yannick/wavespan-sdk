@@ -2,8 +2,26 @@ package wavespan
 
 import (
 	"crypto/tls"
+	"net/http"
 	"testing"
+
+	"golang.org/x/net/http2"
 )
+
+// TestDefaultTransportIsHTTP2 locks in the default transports: h2c (HTTP/2 cleartext) for plaintext
+// endpoints, and the stdlib transport (HTTP/2 via ALPN) for TLS.
+func TestDefaultTransportIsHTTP2(t *testing.T) {
+	if _, ok := newHTTPClient(nil).Transport.(*http2.Transport); !ok {
+		t.Fatalf("plaintext transport = %T, want *http2.Transport (h2c)", newHTTPClient(nil).Transport)
+	}
+	tr, ok := newHTTPClient(&tls.Config{}).Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("tls transport = %T, want *http.Transport", newHTTPClient(&tls.Config{}).Transport)
+	}
+	if !tr.ForceAttemptHTTP2 {
+		t.Fatal("tls transport must set ForceAttemptHTTP2 (HTTP/2 via ALPN)")
+	}
+}
 
 func TestDialValidation(t *testing.T) {
 	if _, err := Dial(Options{}); err == nil {
