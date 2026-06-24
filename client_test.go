@@ -2,26 +2,8 @@ package wavespan
 
 import (
 	"crypto/tls"
-	"net/http"
 	"testing"
-
-	"golang.org/x/net/http2"
 )
-
-// TestDefaultTransportIsHTTP2 locks in the default transports: h2c (HTTP/2 cleartext) for plaintext
-// endpoints, and the stdlib transport (HTTP/2 via ALPN) for TLS.
-func TestDefaultTransportIsHTTP2(t *testing.T) {
-	if _, ok := newHTTPClient(nil).Transport.(*http2.Transport); !ok {
-		t.Fatalf("plaintext transport = %T, want *http2.Transport (h2c)", newHTTPClient(nil).Transport)
-	}
-	tr, ok := newHTTPClient(&tls.Config{}).Transport.(*http.Transport)
-	if !ok {
-		t.Fatalf("tls transport = %T, want *http.Transport", newHTTPClient(&tls.Config{}).Transport)
-	}
-	if !tr.ForceAttemptHTTP2 {
-		t.Fatal("tls transport must set ForceAttemptHTTP2 (HTTP/2 via ALPN)")
-	}
-}
 
 func TestDialValidation(t *testing.T) {
 	if _, err := Dial(Options{}); err == nil {
@@ -32,38 +14,37 @@ func TestDialValidation(t *testing.T) {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	if got, want := c.Endpoint(), "http://localhost:7800"; got != want {
+	if got, want := c.Endpoint(), "localhost:7800"; got != want {
 		t.Errorf("Endpoint = %q, want %q", got, want)
 	}
 }
 
-func TestNormalizeBaseURL(t *testing.T) {
-	cases := []struct {
-		endpoint string
-		tls      bool
-		want     string
-	}{
-		{"localhost:7800", false, "http://localhost:7800"},
-		{"localhost:7800", true, "https://localhost:7800"},
-		{"http://node:7800", true, "http://node:7800"},    // explicit scheme wins over tls flag
-		{"https://node:7800", false, "https://node:7800"}, // explicit scheme preserved
-		{"10.0.0.1:9000", false, "http://10.0.0.1:9000"},
-	}
-	for _, tc := range cases {
-		if got := normalizeBaseURL(tc.endpoint, tc.tls); got != tc.want {
-			t.Errorf("normalizeBaseURL(%q, %v) = %q, want %q", tc.endpoint, tc.tls, got, tc.want)
-		}
-	}
-}
-
-func TestDialTLSSelectsHTTPS(t *testing.T) {
+func TestDialTLSTarget(t *testing.T) {
 	c, err := Dial(Options{Endpoint: "node:7800", TLS: &tls.Config{}})
 	if err != nil {
 		t.Fatalf("Dial: %v", err)
 	}
 	defer func() { _ = c.Close() }()
-	if got, want := c.Endpoint(), "https://node:7800"; got != want {
+	// gRPC dials host:port; the TLS choice is in the dial credentials, not a URL scheme.
+	if got, want := c.Endpoint(), "node:7800"; got != want {
 		t.Errorf("Endpoint = %q, want %q", got, want)
+	}
+}
+
+func TestNormalizeTarget(t *testing.T) {
+	cases := []struct {
+		endpoint string
+		want     string
+	}{
+		{"localhost:7800", "localhost:7800"},
+		{"http://node:7800", "node:7800"},  // scheme stripped
+		{"https://node:7800", "node:7800"}, // scheme stripped
+		{"10.0.0.1:9000", "10.0.0.1:9000"},
+	}
+	for _, tc := range cases {
+		if got := normalizeTarget(tc.endpoint); got != tc.want {
+			t.Errorf("normalizeTarget(%q) = %q, want %q", tc.endpoint, got, tc.want)
+		}
 	}
 }
 

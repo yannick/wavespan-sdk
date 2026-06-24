@@ -1,8 +1,8 @@
 # WaveSpan Go SDK
 
-The official Go client for WaveSpan — a Kubernetes-native, eventually-consistent
-distributed KV / graph / vector store. It wraps the generated Connect stubs with typed, ergonomic
-methods so you never touch request envelopes or stream plumbing directly.
+The official Go client for [WaveSpan](../../README.md) — a Kubernetes-native, eventually-consistent
+distributed KV / graph / vector store. It wraps the generated grpc-go stubs with typed, ergonomic
+methods so you never touch gRPC request/stream plumbing directly.
 
 ```go
 import wavespan "github.com/yannick/wavespan-sdk"
@@ -12,8 +12,8 @@ import wavespan "github.com/yannick/wavespan-sdk"
 
 The WaveSpan server module (`github.com/yannick/wavespan`) is private and pins its storage engine via a
 local `replace` directive, so it is not `go get`-able. This SDK is its **own module** that vendors a
-private copy of the protobuf/Connect stubs (under `internal/gen`) and depends on **only**
-`connectrpc.com/connect` + `google.golang.org/protobuf`. Importing it never drags in the server or
+private copy of the protobuf/grpc stubs (under `internal/gen`) and depends on **only**
+`google.golang.org/grpc` + `google.golang.org/protobuf`. Importing it never drags in the server or
 storage engine.
 
 ## Install
@@ -146,7 +146,7 @@ WaveSpan is eventually consistent, and the SDK never hides it: every read carrie
 
 ## Errors
 
-Transport failures are returned as `*wavespan.Error` (preserving the Connect status code). Helpers:
+Transport failures are returned as `*wavespan.Error` (preserving the gRPC status code). Helpers:
 `wavespan.IsNotFound(err)`, `wavespan.IsUnavailable(err)`, `wavespan.CodeOf(err)`. Note: a missing KV
 key is reported via `Record.Found`, not as an error.
 
@@ -155,26 +155,27 @@ key is reported via `Record.Found`, not as an error.
 ```go
 c, _ := wavespan.Dial(wavespan.Options{
 	Endpoint: "node.example.com:7800",
-	TLS:      &tls.Config{ /* … */ },   // switches to https
-	Token:    os.Getenv("WAVESPAN_TOKEN"), // Authorization: Bearer …
+	TLS:      &tls.Config{ /* … */ },   // secures the gRPC connection (TLS credentials)
+	Token:    os.Getenv("WAVESPAN_TOKEN"), // authorization: Bearer … metadata on every RPC
 })
 ```
 
-The default transport uses **HTTP/2** on both paths so concurrent calls multiplex over one
-connection: TLS negotiates HTTP/2 via ALPN, and plaintext endpoints use h2c (HTTP/2 cleartext).
-Connect also works over HTTP/1.1 — set `Options.HTTPClient` to override the transport entirely.
+The transport is **grpc-go**: all RPCs multiplex over a single HTTP/2 `*grpc.ClientConn`. With `TLS`
+set the connection uses TLS credentials; otherwise it uses insecure (plaintext) credentials. Use
+`Options.DialOptions` to customize the connection (keepalive, balancer, …) and `Options.Interceptors`
+(`grpc.UnaryClientInterceptor`) to add unary client interceptors.
 
 ## Regenerating the stubs
 
-The `.proto` files in [`./proto`](./proto) are the single source of truth. After changing
+The `.proto` files in [`../../proto`](../../proto) are the single source of truth. After changing
 them (and running `buf generate` for the server), refresh the SDK's vendored copy from the repo root:
 
 ```sh
-buf generate
+buf generate --template sdk/go/buf.gen.yaml     # or: make sdk-proto / just sdk-proto
 ```
 
 ## Other languages
 
 The same `.proto` contract drives the in-browser TypeScript client today; a Python SDK can follow the
-same shape (generate stubs with a Connect/protobuf Python plugin, wrap them ergonomically). See the
+same shape (generate stubs with a gRPC/protobuf Python plugin, wrap them ergonomically). See the
 repo-level SDK notes for the cross-language plan.

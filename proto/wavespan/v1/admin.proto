@@ -59,6 +59,13 @@ message HolderSummary {
   Version low_watermark = 6;
   Version high_watermark = 7;
   int64 generated_at_unix_ms = 8;
+  // hll_sketch is a HyperLogLog over the keys this member holds durably. Unioned across members it
+  // estimates the cluster's distinct logical key count (replicas dedup, since a key hashes
+  // identically on every holder); approximate_key_count summed gives total stored replicas.
+  bytes hll_sketch = 9;
+  // namespaces this member holds keys in. Unioned across members it is the cluster namespace list.
+  // Emptied namespaces may linger (we cannot reliably observe deletion of a namespace's last key).
+  repeated string namespaces = 10;
 }
 
 // --- Gossip service (internal SWIM transport) ---

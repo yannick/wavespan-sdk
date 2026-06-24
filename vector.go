@@ -3,7 +3,6 @@ package wavespan
 import (
 	"context"
 
-	"connectrpc.com/connect"
 	wavespanv1 "github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1"
 )
 
@@ -18,36 +17,36 @@ func (c *Client) Vector() *VectorClient { return &VectorClient{c: c} }
 
 // Put stores payload under the embedding vec in collection, returning the assigned version.
 func (v *VectorClient) Put(ctx context.Context, collection string, vec []float32, payload []byte) (*Version, error) {
-	resp, err := v.c.vector.VectorPut(ctx, connect.NewRequest(&wavespanv1.VectorPutReq{
+	resp, err := v.c.vector.VectorPut(ctx, &wavespanv1.VectorPutReq{
 		Collection: collection,
 		Vector:     vec,
 		Payload:    payload,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("VectorPut", err)
 	}
-	return resp.Msg.GetVersion(), nil
+	return resp.GetVersion(), nil
 }
 
 // Get returns the payload stored under the exact embedding vec. found is false when no such vector
 // exists.
 func (v *VectorClient) Get(ctx context.Context, collection string, vec []float32) (payload []byte, found bool, err error) {
-	resp, err := v.c.vector.VectorGet(ctx, connect.NewRequest(&wavespanv1.VectorGetReq{
+	resp, err := v.c.vector.VectorGet(ctx, &wavespanv1.VectorGetReq{
 		Collection: collection,
 		Vector:     vec,
-	}))
+	})
 	if err != nil {
 		return nil, false, wrapErr("VectorGet", err)
 	}
-	return resp.Msg.GetPayload(), resp.Msg.GetFound(), nil
+	return resp.GetPayload(), resp.GetFound(), nil
 }
 
 // Delete removes the vector keyed by the exact embedding vec.
 func (v *VectorClient) Delete(ctx context.Context, collection string, vec []float32) error {
-	_, err := v.c.vector.VectorDelete(ctx, connect.NewRequest(&wavespanv1.VectorDeleteReq{
+	_, err := v.c.vector.VectorDelete(ctx, &wavespanv1.VectorDeleteReq{
 		Collection: collection,
 		Vector:     vec,
-	}))
+	})
 	if err != nil {
 		return wrapErr("VectorDelete", err)
 	}
@@ -98,7 +97,7 @@ func (v *VectorClient) Search(ctx context.Context, collection string, query []fl
 	for _, fn := range opts {
 		fn(&o)
 	}
-	resp, err := v.c.vector.VectorSearch(ctx, connect.NewRequest(&wavespanv1.VectorSearchReq{
+	msg, err := v.c.vector.VectorSearch(ctx, &wavespanv1.VectorSearchReq{
 		Collection:     collection,
 		Query:          query,
 		K:              k,
@@ -106,11 +105,10 @@ func (v *VectorClient) Search(ctx context.Context, collection string, query []fl
 		EfSearch:       o.efSearch,
 		Rerank:         o.rerank,
 		IncludePayload: o.includePayload,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("VectorSearch", err)
 	}
-	msg := resp.Msg
 	neighbors := make([]Neighbor, 0, len(msg.GetNeighbors()))
 	for _, n := range msg.GetNeighbors() {
 		neighbors = append(neighbors, Neighbor{

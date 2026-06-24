@@ -379,8 +379,15 @@ type HolderSummary struct {
 	LowWatermark        *Version               `protobuf:"bytes,6,opt,name=low_watermark,json=lowWatermark,proto3" json:"low_watermark,omitempty"`
 	HighWatermark       *Version               `protobuf:"bytes,7,opt,name=high_watermark,json=highWatermark,proto3" json:"high_watermark,omitempty"`
 	GeneratedAtUnixMs   int64                  `protobuf:"varint,8,opt,name=generated_at_unix_ms,json=generatedAtUnixMs,proto3" json:"generated_at_unix_ms,omitempty"`
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// hll_sketch is a HyperLogLog over the keys this member holds durably. Unioned across members it
+	// estimates the cluster's distinct logical key count (replicas dedup, since a key hashes
+	// identically on every holder); approximate_key_count summed gives total stored replicas.
+	HllSketch []byte `protobuf:"bytes,9,opt,name=hll_sketch,json=hllSketch,proto3" json:"hll_sketch,omitempty"`
+	// namespaces this member holds keys in. Unioned across members it is the cluster namespace list.
+	// Emptied namespaces may linger (we cannot reliably observe deletion of a namespace's last key).
+	Namespaces    []string `protobuf:"bytes,10,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *HolderSummary) Reset() {
@@ -467,6 +474,20 @@ func (x *HolderSummary) GetGeneratedAtUnixMs() int64 {
 		return x.GeneratedAtUnixMs
 	}
 	return 0
+}
+
+func (x *HolderSummary) GetHllSketch() []byte {
+	if x != nil {
+		return x.HllSketch
+	}
+	return nil
+}
+
+func (x *HolderSummary) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
+	}
+	return nil
 }
 
 // ConfigDelta is a runtime tunable override gossiped epidemically and merged last-write-wins by
@@ -1021,7 +1042,7 @@ const file_wavespan_v1_admin_proto_rawDesc = "" +
 	"packetLoss\x12/\n" +
 	"\x14last_success_unix_ms\x18\x06 \x01(\x03R\x11lastSuccessUnixMs\x12/\n" +
 	"\x14last_failure_unix_ms\x18\a \x01(\x03R\x11lastFailureUnixMs\x12!\n" +
-	"\fsample_count\x18\b \x01(\rR\vsampleCount\"\xe5\x02\n" +
+	"\fsample_count\x18\b \x01(\rR\vsampleCount\"\xa4\x03\n" +
 	"\rHolderSummary\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x19\n" +
 	"\brange_id\x18\x02 \x01(\tR\arangeId\x12\x1b\n" +
@@ -1030,7 +1051,13 @@ const file_wavespan_v1_admin_proto_rawDesc = "" +
 	"\x15approximate_key_count\x18\x05 \x01(\x04R\x13approximateKeyCount\x129\n" +
 	"\rlow_watermark\x18\x06 \x01(\v2\x14.wavespan.v1.VersionR\flowWatermark\x12;\n" +
 	"\x0ehigh_watermark\x18\a \x01(\v2\x14.wavespan.v1.VersionR\rhighWatermark\x12/\n" +
-	"\x14generated_at_unix_ms\x18\b \x01(\x03R\x11generatedAtUnixMs\"g\n" +
+	"\x14generated_at_unix_ms\x18\b \x01(\x03R\x11generatedAtUnixMs\x12\x1d\n" +
+	"\n" +
+	"hll_sketch\x18\t \x01(\fR\thllSketch\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\n" +
+	" \x03(\tR\n" +
+	"namespaces\"g\n" +
 	"\vConfigDelta\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value\x12\x18\n" +

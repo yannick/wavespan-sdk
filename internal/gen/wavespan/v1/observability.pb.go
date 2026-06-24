@@ -1414,6 +1414,14 @@ type GetClusterViewResponse struct {
 	Edges                   []*LatencyEdge         `protobuf:"bytes,2,rep,name=edges,proto3" json:"edges,omitempty"`
 	Repair                  []*RangeRepairStatus   `protobuf:"bytes,3,rep,name=repair,proto3" json:"repair,omitempty"`
 	UnderReplicatedEstimate uint64                 `protobuf:"varint,4,opt,name=under_replicated_estimate,json=underReplicatedEstimate,proto3" json:"under_replicated_estimate,omitempty"`
+	// namespaces is the gossiped union of namespaces held cluster-wide (emptied ones may linger).
+	Namespaces []string `protobuf:"bytes,5,rep,name=namespaces,proto3" json:"namespaces,omitempty"`
+	// local_keys is this node's exact live-key count; cluster_replicas_estimate is the sum of every
+	// alive member's live-key count (replica-weighted); distinct_keys_estimate is the HLL-union
+	// estimate of distinct logical keys cluster-wide.
+	LocalKeys               uint64 `protobuf:"varint,6,opt,name=local_keys,json=localKeys,proto3" json:"local_keys,omitempty"`
+	ClusterReplicasEstimate uint64 `protobuf:"varint,7,opt,name=cluster_replicas_estimate,json=clusterReplicasEstimate,proto3" json:"cluster_replicas_estimate,omitempty"`
+	DistinctKeysEstimate    uint64 `protobuf:"varint,8,opt,name=distinct_keys_estimate,json=distinctKeysEstimate,proto3" json:"distinct_keys_estimate,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -1472,6 +1480,34 @@ func (x *GetClusterViewResponse) GetRepair() []*RangeRepairStatus {
 func (x *GetClusterViewResponse) GetUnderReplicatedEstimate() uint64 {
 	if x != nil {
 		return x.UnderReplicatedEstimate
+	}
+	return 0
+}
+
+func (x *GetClusterViewResponse) GetNamespaces() []string {
+	if x != nil {
+		return x.Namespaces
+	}
+	return nil
+}
+
+func (x *GetClusterViewResponse) GetLocalKeys() uint64 {
+	if x != nil {
+		return x.LocalKeys
+	}
+	return 0
+}
+
+func (x *GetClusterViewResponse) GetClusterReplicasEstimate() uint64 {
+	if x != nil {
+		return x.ClusterReplicasEstimate
+	}
+	return 0
+}
+
+func (x *GetClusterViewResponse) GetDistinctKeysEstimate() uint64 {
+	if x != nil {
+		return x.DistinctKeysEstimate
 	}
 	return 0
 }
@@ -2785,6 +2821,111 @@ func (x *AdminDeleteResponse) GetError() string {
 	return ""
 }
 
+type DeleteNamespaceRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteNamespaceRequest) Reset() {
+	*x = DeleteNamespaceRequest{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteNamespaceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteNamespaceRequest) ProtoMessage() {}
+
+func (x *DeleteNamespaceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteNamespaceRequest.ProtoReflect.Descriptor instead.
+func (*DeleteNamespaceRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *DeleteNamespaceRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+type DeleteNamespaceResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// deleted_keys is the number of live keys tombstoned across the cluster.
+	DeletedKeys   uint64 `protobuf:"varint,2,opt,name=deleted_keys,json=deletedKeys,proto3" json:"deleted_keys,omitempty"`
+	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteNamespaceResponse) Reset() {
+	*x = DeleteNamespaceResponse{}
+	mi := &file_wavespan_v1_observability_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteNamespaceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteNamespaceResponse) ProtoMessage() {}
+
+func (x *DeleteNamespaceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_observability_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteNamespaceResponse.ProtoReflect.Descriptor instead.
+func (*DeleteNamespaceResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_observability_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *DeleteNamespaceResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *DeleteNamespaceResponse) GetDeletedKeys() uint64 {
+	if x != nil {
+		return x.DeletedKeys
+	}
+	return 0
+}
+
+func (x *DeleteNamespaceResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_wavespan_v1_observability_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_observability_proto_rawDesc = "" +
@@ -2880,12 +3021,19 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"rangeStart\x12\x1b\n" +
 	"\trange_end\x18\x02 \x01(\fR\brangeEnd\x12)\n" +
 	"\x10under_replicated\x18\x03 \x01(\rR\x0funderReplicated\"\x17\n" +
-	"\x15GetClusterViewRequest\"\xf0\x01\n" +
+	"\x15GetClusterViewRequest\"\xa1\x03\n" +
 	"\x16GetClusterViewResponse\x122\n" +
 	"\amembers\x18\x01 \x03(\v2\x18.wavespan.v1.MemberStateR\amembers\x12.\n" +
 	"\x05edges\x18\x02 \x03(\v2\x18.wavespan.v1.LatencyEdgeR\x05edges\x126\n" +
 	"\x06repair\x18\x03 \x03(\v2\x1e.wavespan.v1.RangeRepairStatusR\x06repair\x12:\n" +
-	"\x19under_replicated_estimate\x18\x04 \x01(\x04R\x17underReplicatedEstimate\"\xd7\x01\n" +
+	"\x19under_replicated_estimate\x18\x04 \x01(\x04R\x17underReplicatedEstimate\x12\x1e\n" +
+	"\n" +
+	"namespaces\x18\x05 \x03(\tR\n" +
+	"namespaces\x12\x1d\n" +
+	"\n" +
+	"local_keys\x18\x06 \x01(\x04R\tlocalKeys\x12:\n" +
+	"\x19cluster_replicas_estimate\x18\a \x01(\x04R\x17clusterReplicasEstimate\x124\n" +
+	"\x16distinct_keys_estimate\x18\b \x01(\x04R\x14distinctKeysEstimate\"\xd7\x01\n" +
 	"\tGraphNode\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\x12\x16\n" +
 	"\x06labels\x18\x02 \x03(\tR\x06labels\x12F\n" +
@@ -2989,7 +3137,13 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\v2\x14.wavespan.v1.VersionR\aversion\x122\n" +
 	"\x15acked_nearby_replicas\x18\x03 \x01(\rR\x13ackedNearbyReplicas\x122\n" +
 	"\x15coordinator_member_id\x18\x04 \x01(\tR\x13coordinatorMemberId\x12\x14\n" +
-	"\x05error\x18\x05 \x01(\tR\x05error*\x87\x02\n" +
+	"\x05error\x18\x05 \x01(\tR\x05error\"6\n" +
+	"\x16DeleteNamespaceRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\"b\n" +
+	"\x17DeleteNamespaceResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12!\n" +
+	"\fdeleted_keys\x18\x02 \x01(\x04R\vdeletedKeys\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error*\x87\x02\n" +
 	"\n" +
 	"GossipKind\x12\x1b\n" +
 	"\x17GOSSIP_KIND_UNSPECIFIED\x10\x00\x12\x0f\n" +
@@ -3019,7 +3173,7 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\x18HOLDER_CLASS_UNSPECIFIED\x10\x00\x12\x11\n" +
 	"\rHOLDER_ORIGIN\x10\x01\x12\x12\n" +
 	"\x0eHOLDER_DURABLE\x10\x02\x12\x18\n" +
-	"\x14HOLDER_DYNAMIC_CACHE\x10\x032\xb1\a\n" +
+	"\x14HOLDER_DYNAMIC_CACHE\x10\x032\x8f\b\n" +
 	"\x14ObservabilityService\x12L\n" +
 	"\fStreamGossip\x12 .wavespan.v1.StreamGossipRequest\x1a\x18.wavespan.v1.GossipEvent0\x01\x12K\n" +
 	"\fInspectLocal\x12 .wavespan.v1.InspectLocalRequest\x1a\x17.wavespan.v1.InspectRow0\x01\x12M\n" +
@@ -3029,7 +3183,8 @@ const file_wavespan_v1_observability_proto_rawDesc = "" +
 	"\rGraphSubgraph\x12!.wavespan.v1.GraphSubgraphRequest\x1a!.wavespan.v1.GraphExploreResponse\x12b\n" +
 	"\x11LoadSampleDataset\x12%.wavespan.v1.LoadSampleDatasetRequest\x1a&.wavespan.v1.LoadSampleDatasetResponse\x12G\n" +
 	"\bAdminPut\x12\x1c.wavespan.v1.AdminPutRequest\x1a\x1d.wavespan.v1.AdminPutResponse\x12P\n" +
-	"\vAdminDelete\x12\x1f.wavespan.v1.AdminDeleteRequest\x1a .wavespan.v1.AdminDeleteResponse\x12K\n" +
+	"\vAdminDelete\x12\x1f.wavespan.v1.AdminDeleteRequest\x1a .wavespan.v1.AdminDeleteResponse\x12\\\n" +
+	"\x0fDeleteNamespace\x12#.wavespan.v1.DeleteNamespaceRequest\x1a$.wavespan.v1.DeleteNamespaceResponse\x12K\n" +
 	"\rGetNodeConfig\x12!.wavespan.v1.GetNodeConfigRequest\x1a\x17.wavespan.v1.NodeConfig\x12\\\n" +
 	"\x0fAdminSetTunable\x12#.wavespan.v1.AdminSetTunableRequest\x1a$.wavespan.v1.AdminSetTunableResponse2\xa3\x01\n" +
 	"\rConfigService\x12C\n" +
@@ -3051,7 +3206,7 @@ func file_wavespan_v1_observability_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_observability_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 36)
+var file_wavespan_v1_observability_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_wavespan_v1_observability_proto_goTypes = []any{
 	(GossipKind)(0),                   // 0: wavespan.v1.GossipKind
 	(GossipDirection)(0),              // 1: wavespan.v1.GossipDirection
@@ -3092,14 +3247,16 @@ var file_wavespan_v1_observability_proto_goTypes = []any{
 	(*AdminPutResponse)(nil),          // 36: wavespan.v1.AdminPutResponse
 	(*AdminDeleteRequest)(nil),        // 37: wavespan.v1.AdminDeleteRequest
 	(*AdminDeleteResponse)(nil),       // 38: wavespan.v1.AdminDeleteResponse
-	nil,                               // 39: wavespan.v1.GraphNode.PropertiesEntry
-	(*Version)(nil),                   // 40: wavespan.v1.Version
-	(ConflictState)(0),                // 41: wavespan.v1.ConflictState
-	(Completeness)(0),                 // 42: wavespan.v1.Completeness
-	(*ResponseMeta)(nil),              // 43: wavespan.v1.ResponseMeta
-	(*MemberState)(nil),               // 44: wavespan.v1.MemberState
-	(*LatencyEdge)(nil),               // 45: wavespan.v1.LatencyEdge
-	(*Value)(nil),                     // 46: wavespan.v1.Value
+	(*DeleteNamespaceRequest)(nil),    // 39: wavespan.v1.DeleteNamespaceRequest
+	(*DeleteNamespaceResponse)(nil),   // 40: wavespan.v1.DeleteNamespaceResponse
+	nil,                               // 41: wavespan.v1.GraphNode.PropertiesEntry
+	(*Version)(nil),                   // 42: wavespan.v1.Version
+	(ConflictState)(0),                // 43: wavespan.v1.ConflictState
+	(Completeness)(0),                 // 44: wavespan.v1.Completeness
+	(*ResponseMeta)(nil),              // 45: wavespan.v1.ResponseMeta
+	(*MemberState)(nil),               // 46: wavespan.v1.MemberState
+	(*LatencyEdge)(nil),               // 47: wavespan.v1.LatencyEdge
+	(*Value)(nil),                     // 48: wavespan.v1.Value
 }
 var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	0,  // 0: wavespan.v1.GossipFilter.kinds:type_name -> wavespan.v1.GossipKind
@@ -3111,29 +3268,29 @@ var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	7,  // 6: wavespan.v1.GossipEvent.gap:type_name -> wavespan.v1.GapMarker
 	4,  // 7: wavespan.v1.StreamGossipRequest.filter:type_name -> wavespan.v1.GossipFilter
 	3,  // 8: wavespan.v1.InspectHolder.holder_class:type_name -> wavespan.v1.HolderClass
-	40, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
-	41, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
-	40, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
-	40, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
-	41, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
+	42, // 9: wavespan.v1.InspectHolder.version:type_name -> wavespan.v1.Version
+	43, // 10: wavespan.v1.InspectHolder.conflict:type_name -> wavespan.v1.ConflictState
+	42, // 11: wavespan.v1.InspectSibling.version:type_name -> wavespan.v1.Version
+	42, // 12: wavespan.v1.InspectKey.version:type_name -> wavespan.v1.Version
+	43, // 13: wavespan.v1.InspectKey.conflict:type_name -> wavespan.v1.ConflictState
 	11, // 14: wavespan.v1.InspectKey.siblings:type_name -> wavespan.v1.InspectSibling
 	10, // 15: wavespan.v1.InspectKey.holders:type_name -> wavespan.v1.InspectHolder
-	42, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
-	43, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
+	44, // 16: wavespan.v1.InspectTrailer.final_completeness:type_name -> wavespan.v1.Completeness
+	45, // 17: wavespan.v1.InspectRow.header:type_name -> wavespan.v1.ResponseMeta
 	12, // 18: wavespan.v1.InspectRow.key:type_name -> wavespan.v1.InspectKey
 	13, // 19: wavespan.v1.InspectRow.trailer:type_name -> wavespan.v1.InspectTrailer
 	2,  // 20: wavespan.v1.InspectLocalRequest.keyspace:type_name -> wavespan.v1.Keyspace
 	2,  // 21: wavespan.v1.InspectGlobalRequest.keyspace:type_name -> wavespan.v1.Keyspace
-	44, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
-	45, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
+	46, // 22: wavespan.v1.GetClusterViewResponse.members:type_name -> wavespan.v1.MemberState
+	47, // 23: wavespan.v1.GetClusterViewResponse.edges:type_name -> wavespan.v1.LatencyEdge
 	17, // 24: wavespan.v1.GetClusterViewResponse.repair:type_name -> wavespan.v1.RangeRepairStatus
-	39, // 25: wavespan.v1.GraphNode.properties:type_name -> wavespan.v1.GraphNode.PropertiesEntry
+	41, // 25: wavespan.v1.GraphNode.properties:type_name -> wavespan.v1.GraphNode.PropertiesEntry
 	20, // 26: wavespan.v1.GraphExploreResponse.nodes:type_name -> wavespan.v1.GraphNode
 	21, // 27: wavespan.v1.GraphExploreResponse.edges:type_name -> wavespan.v1.GraphEdge
 	27, // 28: wavespan.v1.NodeConfig.tunables:type_name -> wavespan.v1.TunableState
-	40, // 29: wavespan.v1.AdminPutResponse.version:type_name -> wavespan.v1.Version
-	40, // 30: wavespan.v1.AdminDeleteResponse.version:type_name -> wavespan.v1.Version
-	46, // 31: wavespan.v1.GraphNode.PropertiesEntry.value:type_name -> wavespan.v1.Value
+	42, // 29: wavespan.v1.AdminPutResponse.version:type_name -> wavespan.v1.Version
+	42, // 30: wavespan.v1.AdminDeleteResponse.version:type_name -> wavespan.v1.Version
+	48, // 31: wavespan.v1.GraphNode.PropertiesEntry.value:type_name -> wavespan.v1.Value
 	9,  // 32: wavespan.v1.ObservabilityService.StreamGossip:input_type -> wavespan.v1.StreamGossipRequest
 	15, // 33: wavespan.v1.ObservabilityService.InspectLocal:input_type -> wavespan.v1.InspectLocalRequest
 	16, // 34: wavespan.v1.ObservabilityService.InspectGlobal:input_type -> wavespan.v1.InspectGlobalRequest
@@ -3143,25 +3300,27 @@ var file_wavespan_v1_observability_proto_depIdxs = []int32{
 	25, // 38: wavespan.v1.ObservabilityService.LoadSampleDataset:input_type -> wavespan.v1.LoadSampleDatasetRequest
 	35, // 39: wavespan.v1.ObservabilityService.AdminPut:input_type -> wavespan.v1.AdminPutRequest
 	37, // 40: wavespan.v1.ObservabilityService.AdminDelete:input_type -> wavespan.v1.AdminDeleteRequest
-	32, // 41: wavespan.v1.ObservabilityService.GetNodeConfig:input_type -> wavespan.v1.GetNodeConfigRequest
-	33, // 42: wavespan.v1.ObservabilityService.AdminSetTunable:input_type -> wavespan.v1.AdminSetTunableRequest
-	29, // 43: wavespan.v1.ConfigService.GetConfig:input_type -> wavespan.v1.GetConfigRequest
-	30, // 44: wavespan.v1.ConfigService.SetTunable:input_type -> wavespan.v1.SetTunableRequest
-	8,  // 45: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
-	14, // 46: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
-	14, // 47: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
-	19, // 48: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
-	23, // 49: wavespan.v1.ObservabilityService.GraphExplore:output_type -> wavespan.v1.GraphExploreResponse
-	23, // 50: wavespan.v1.ObservabilityService.GraphSubgraph:output_type -> wavespan.v1.GraphExploreResponse
-	26, // 51: wavespan.v1.ObservabilityService.LoadSampleDataset:output_type -> wavespan.v1.LoadSampleDatasetResponse
-	36, // 52: wavespan.v1.ObservabilityService.AdminPut:output_type -> wavespan.v1.AdminPutResponse
-	38, // 53: wavespan.v1.ObservabilityService.AdminDelete:output_type -> wavespan.v1.AdminDeleteResponse
-	28, // 54: wavespan.v1.ObservabilityService.GetNodeConfig:output_type -> wavespan.v1.NodeConfig
-	34, // 55: wavespan.v1.ObservabilityService.AdminSetTunable:output_type -> wavespan.v1.AdminSetTunableResponse
-	28, // 56: wavespan.v1.ConfigService.GetConfig:output_type -> wavespan.v1.NodeConfig
-	31, // 57: wavespan.v1.ConfigService.SetTunable:output_type -> wavespan.v1.SetTunableResponse
-	45, // [45:58] is the sub-list for method output_type
-	32, // [32:45] is the sub-list for method input_type
+	39, // 41: wavespan.v1.ObservabilityService.DeleteNamespace:input_type -> wavespan.v1.DeleteNamespaceRequest
+	32, // 42: wavespan.v1.ObservabilityService.GetNodeConfig:input_type -> wavespan.v1.GetNodeConfigRequest
+	33, // 43: wavespan.v1.ObservabilityService.AdminSetTunable:input_type -> wavespan.v1.AdminSetTunableRequest
+	29, // 44: wavespan.v1.ConfigService.GetConfig:input_type -> wavespan.v1.GetConfigRequest
+	30, // 45: wavespan.v1.ConfigService.SetTunable:input_type -> wavespan.v1.SetTunableRequest
+	8,  // 46: wavespan.v1.ObservabilityService.StreamGossip:output_type -> wavespan.v1.GossipEvent
+	14, // 47: wavespan.v1.ObservabilityService.InspectLocal:output_type -> wavespan.v1.InspectRow
+	14, // 48: wavespan.v1.ObservabilityService.InspectGlobal:output_type -> wavespan.v1.InspectRow
+	19, // 49: wavespan.v1.ObservabilityService.GetClusterView:output_type -> wavespan.v1.GetClusterViewResponse
+	23, // 50: wavespan.v1.ObservabilityService.GraphExplore:output_type -> wavespan.v1.GraphExploreResponse
+	23, // 51: wavespan.v1.ObservabilityService.GraphSubgraph:output_type -> wavespan.v1.GraphExploreResponse
+	26, // 52: wavespan.v1.ObservabilityService.LoadSampleDataset:output_type -> wavespan.v1.LoadSampleDatasetResponse
+	36, // 53: wavespan.v1.ObservabilityService.AdminPut:output_type -> wavespan.v1.AdminPutResponse
+	38, // 54: wavespan.v1.ObservabilityService.AdminDelete:output_type -> wavespan.v1.AdminDeleteResponse
+	40, // 55: wavespan.v1.ObservabilityService.DeleteNamespace:output_type -> wavespan.v1.DeleteNamespaceResponse
+	28, // 56: wavespan.v1.ObservabilityService.GetNodeConfig:output_type -> wavespan.v1.NodeConfig
+	34, // 57: wavespan.v1.ObservabilityService.AdminSetTunable:output_type -> wavespan.v1.AdminSetTunableResponse
+	28, // 58: wavespan.v1.ConfigService.GetConfig:output_type -> wavespan.v1.NodeConfig
+	31, // 59: wavespan.v1.ConfigService.SetTunable:output_type -> wavespan.v1.SetTunableResponse
+	46, // [46:60] is the sub-list for method output_type
+	32, // [32:46] is the sub-list for method input_type
 	32, // [32:32] is the sub-list for extension type_name
 	32, // [32:32] is the sub-list for extension extendee
 	0,  // [0:32] is the sub-list for field type_name
@@ -3192,7 +3351,7 @@ func file_wavespan_v1_observability_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_observability_proto_rawDesc), len(file_wavespan_v1_observability_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   36,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

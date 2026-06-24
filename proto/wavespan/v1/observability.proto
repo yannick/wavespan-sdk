@@ -183,6 +183,14 @@ message GetClusterViewResponse {
   repeated LatencyEdge edges = 2;
   repeated RangeRepairStatus repair = 3;
   uint64 under_replicated_estimate = 4;
+  // namespaces is the gossiped union of namespaces held cluster-wide (emptied ones may linger).
+  repeated string namespaces = 5;
+  // local_keys is this node's exact live-key count; cluster_replicas_estimate is the sum of every
+  // alive member's live-key count (replica-weighted); distinct_keys_estimate is the HLL-union
+  // estimate of distinct logical keys cluster-wide.
+  uint64 local_keys = 6;
+  uint64 cluster_replicas_estimate = 7;
+  uint64 distinct_keys_estimate = 8;
 }
 
 // --- Visual graph explorer (design/26 node explorer) ---
@@ -265,6 +273,9 @@ service ObservabilityService {
   // AdminDelete writes a tombstone for a KV record from the node UI (Data Browser delete),
   // coordinated by a chosen cluster member (target_member_id), mirroring AdminPut.
   rpc AdminDelete(AdminDeleteRequest) returns (AdminDeleteResponse);
+  // DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
+  // deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
+  rpc DeleteNamespace(DeleteNamespaceRequest) returns (DeleteNamespaceResponse);
   // GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
   // serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
   // UI Config tab and cross-node config inspection.
@@ -380,4 +391,14 @@ message AdminDeleteResponse {
   uint32 acked_nearby_replicas = 3;
   string coordinator_member_id = 4;
   string error = 5;
+}
+
+message DeleteNamespaceRequest {
+  string namespace = 1;
+}
+message DeleteNamespaceResponse {
+  bool ok = 1;
+  // deleted_keys is the number of live keys tombstoned across the cluster.
+  uint64 deleted_keys = 2;
+  string error = 3;
 }

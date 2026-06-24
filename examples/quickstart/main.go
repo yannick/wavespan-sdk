@@ -1,7 +1,7 @@
 // Command quickstart demonstrates the WaveSpan Go SDK against a running node (default data port
 // localhost:7800). Start a node (e.g. `make container-single` or a local dev node) then run:
 //
-//	go run ./examples/quickstart --addr localhost:7800
+//	go run ./sdk/go/examples/quickstart --addr localhost:7800
 package main
 
 import (

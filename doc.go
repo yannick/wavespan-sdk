@@ -1,9 +1,9 @@
 // Package wavespan is the official Go client SDK for WaveSpan, a Kubernetes-native,
 // eventually-consistent distributed KV / graph / vector store.
 //
-// It wraps the generated Connect stubs with typed, ergonomic methods so callers never touch
-// connect.Request envelopes, stream plumbing, or transport setup directly. The SDK covers the
-// data-plane services exposed on a node's data port (default :7800):
+// It wraps the generated grpc-go stubs with typed, ergonomic methods so callers never touch
+// gRPC request/stream plumbing or transport setup directly. The SDK covers the data-plane services
+// exposed on a node's data port (default :7800):
 //
 //   - Key/Value:  [Client.Put], [Client.Get], [Client.MultiGet], [Client.Delete], [Client.Scan]
 //   - Vectors:    [Client.Vector] → [VectorClient.Put]/[VectorClient.Get]/[VectorClient.Search]/…
@@ -23,5 +23,6 @@
 // mode of a result is never hidden — WaveSpan is eventually consistent and the SDK surfaces that
 // honestly rather than papering over it.
 //
-// The SDK is safe for concurrent use by multiple goroutines and reuses a single HTTP connection pool.
+// The SDK is safe for concurrent use by multiple goroutines and multiplexes all RPCs over a single
+// gRPC connection (*grpc.ClientConn).
 package wavespan

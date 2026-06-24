@@ -2,10 +2,11 @@ package wavespan
 
 import (
 	"context"
+	"io"
 	"iter"
 
-	"connectrpc.com/connect"
 	wavespanv1 "github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1"
+	"google.golang.org/grpc"
 )
 
 // QueryMeta is the honest metadata terminating every Cypher result stream: which members
@@ -20,11 +21,11 @@ func (c *Client) Query(ctx context.Context, graphID, query string, params map[st
 	if err != nil {
 		return nil, err
 	}
-	stream, err := c.cypher.Query(ctx, connect.NewRequest(&wavespanv1.CypherRequest{
+	stream, err := c.cypher.Query(ctx, &wavespanv1.CypherRequest{
 		GraphId:    graphID,
 		Query:      query,
 		Parameters: pb,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("Query", err)
 	}
@@ -34,7 +35,7 @@ func (c *Client) Query(ctx context.Context, graphID, query string, params map[st
 // QueryResult is a live Cypher result stream. Iterate result rows with [QueryResult.Rows]; read
 // [QueryResult.Meta] after the stream is fully drained.
 type QueryResult struct {
-	stream *connect.ServerStreamForClient[wavespanv1.CypherResult]
+	stream grpc.ServerStreamingClient[wavespanv1.CypherResult]
 	meta   *QueryMeta
 }
 
@@ -48,8 +49,16 @@ type Row map[string]any
 // when the stream ends; a transport error surfaces as a non-nil error in the final step.
 func (q *QueryResult) Rows() iter.Seq2[Row, error] {
 	return func(yield func(Row, error) bool) {
-		for q.stream.Receive() {
-			switch m := q.stream.Msg().Msg.(type) {
+		for {
+			msg, err := q.stream.Recv()
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				yield(nil, wrapErr("Query", err))
+				return
+			}
+			switch m := msg.Msg.(type) {
 			case *wavespanv1.CypherResult_Row:
 				if !yield(rowToGo(m.Row), nil) {
 					return
@@ -58,9 +67,6 @@ func (q *QueryResult) Rows() iter.Seq2[Row, error] {
 				q.meta = m.Meta
 				return
 			}
-		}
-		if err := q.stream.Err(); err != nil {
-			yield(nil, wrapErr("Query", err))
 		}
 	}
 }

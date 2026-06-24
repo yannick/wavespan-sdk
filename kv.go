@@ -2,11 +2,12 @@ package wavespan
 
 import (
 	"context"
+	"io"
 	"iter"
 	"time"
 
-	"connectrpc.com/connect"
 	wavespanv1 "github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1"
+	"google.golang.org/grpc"
 )
 
 // Version is the per-mutation hybrid-logical-clock stamp returned by writes and reads.
@@ -48,11 +49,10 @@ func (c *Client) Put(ctx context.Context, namespace string, key, value []byte, o
 	if o.idempotencyKey != "" {
 		req.IdempotencyKey = &o.idempotencyKey
 	}
-	resp, err := c.kv.Put(ctx, connect.NewRequest(req))
+	m, err := c.kv.Put(ctx, req)
 	if err != nil {
 		return nil, wrapErr("Put", err)
 	}
-	m := resp.Msg
 	return &WriteResult{
 		Version:             m.GetVersion(),
 		AckedNearbyReplicas: m.GetAckedNearbyReplicas(),
@@ -68,16 +68,16 @@ func (c *Client) Get(ctx context.Context, namespace string, key []byte, opts ...
 	for _, fn := range opts {
 		fn(&o)
 	}
-	resp, err := c.kv.Get(ctx, connect.NewRequest(&wavespanv1.GetRequest{
+	resp, err := c.kv.Get(ctx, &wavespanv1.GetRequest{
 		Namespace:         namespace,
 		Key:               key,
 		AllowDynamicCache: o.allowDynamicCache,
 		HideExpiredOnRead: o.hideExpired,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("Get", err)
 	}
-	return recordFromGet(resp.Msg), nil
+	return recordFromGet(resp), nil
 }
 
 // MultiGet reads many keys of one namespace in a single round-trip. Results are returned in request
@@ -87,16 +87,16 @@ func (c *Client) MultiGet(ctx context.Context, namespace string, keys [][]byte, 
 	for _, fn := range opts {
 		fn(&o)
 	}
-	resp, err := c.kv.MultiGet(ctx, connect.NewRequest(&wavespanv1.MultiGetRequest{
+	resp, err := c.kv.MultiGet(ctx, &wavespanv1.MultiGetRequest{
 		Namespace:         namespace,
 		Keys:              keys,
 		HideExpiredOnRead: o.hideExpired,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("MultiGet", err)
 	}
-	out := make([]*Record, 0, len(resp.Msg.GetResults()))
-	for _, r := range resp.Msg.GetResults() {
+	out := make([]*Record, 0, len(resp.GetResults()))
+	for _, r := range resp.GetResults() {
 		out = append(out, recordFromGet(r))
 	}
 	return out, nil
@@ -116,11 +116,10 @@ func (c *Client) Delete(ctx context.Context, namespace string, key []byte, opts 
 	if o.idempotencyKey != "" {
 		req.IdempotencyKey = &o.idempotencyKey
 	}
-	resp, err := c.kv.Delete(ctx, connect.NewRequest(req))
+	m, err := c.kv.Delete(ctx, req)
 	if err != nil {
 		return nil, wrapErr("Delete", err)
 	}
-	m := resp.Msg
 	return &WriteResult{
 		Version:             m.GetVersion(),
 		AckedNearbyReplicas: m.GetAckedNearbyReplicas(),
@@ -144,31 +143,33 @@ func (c *Client) Scan(ctx context.Context, namespace string, opts ...ScanOption)
 	for _, fn := range opts {
 		fn(&o)
 	}
-	stream, err := c.kv.Scan(ctx, connect.NewRequest(&wavespanv1.ScanRequest{
+	stream, err := c.kv.Scan(ctx, &wavespanv1.ScanRequest{
 		Namespace: namespace,
 		StartKey:  o.start,
 		EndKey:    o.end,
 		Limit:     o.limit,
 		Mode:      o.mode,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("Scan", err)
 	}
 	sr := &ScanResult{stream: stream}
 	// Eagerly read the header (the server always sends it first) so completeness is visible up front.
-	if stream.Receive() {
-		switch m := stream.Msg().Msg.(type) {
+	first, err := stream.Recv()
+	switch {
+	case err == io.EOF:
+		sr.exhausted = true
+	case err != nil:
+		return nil, wrapErr("Scan", err)
+	default:
+		switch m := first.Msg.(type) {
 		case *wavespanv1.ScanResponse_Header:
 			sr.mode = m.Header.GetMode()
 			sr.completeness = m.Header.GetCompleteness()
 			sr.meta = m.Header.GetMeta()
 		default:
-			sr.pending = stream.Msg() // unexpected first frame; replay it during Rows()
+			sr.pending = first // unexpected first frame; replay it during Rows()
 		}
-	} else if err := stream.Err(); err != nil {
-		return nil, wrapErr("Scan", err)
-	} else {
-		sr.exhausted = true
 	}
 	return sr, nil
 }
@@ -176,7 +177,7 @@ func (c *Client) Scan(ctx context.Context, namespace string, opts ...ScanOption)
 // ScanResult is a live range-scan stream. Iterate rows with [ScanResult.Rows]; read completeness and
 // warnings before (header) and after (trailer) iteration.
 type ScanResult struct {
-	stream  *connect.ServerStreamForClient[wavespanv1.ScanResponse]
+	stream  grpc.ServerStreamingClient[wavespanv1.ScanResponse]
 	pending *wavespanv1.ScanResponse
 	meta    *ResponseMeta
 
@@ -223,13 +224,19 @@ func (s *ScanResult) Rows() iter.Seq2[*ScanRow, error] {
 		if s.exhausted {
 			return
 		}
-		for s.stream.Receive() {
-			if !s.dispatch(s.stream.Msg(), yield) {
+		for {
+			msg, err := s.stream.Recv()
+			if err == io.EOF {
+				s.exhausted = true
 				return
 			}
-		}
-		if err := s.stream.Err(); err != nil {
-			yield(nil, wrapErr("Scan", err))
+			if err != nil {
+				yield(nil, wrapErr("Scan", err))
+				return
+			}
+			if !s.dispatch(msg, yield) {
+				return
+			}
 		}
 	}
 }

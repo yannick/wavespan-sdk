@@ -4,7 +4,6 @@ import (
 	"context"
 	"time"
 
-	"connectrpc.com/connect"
 	wavespanv1 "github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1"
 )
 
@@ -52,69 +51,69 @@ type ScoredMember struct {
 
 // SAdd adds members to the set, returning the number newly added.
 func (cc *CollectionsClient) SAdd(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.SAdd(ctx, connect.NewRequest(&wavespanv1.SAddRequest{
+	resp, err := cc.c.collections.SAdd(ctx, &wavespanv1.SAddRequest{
 		Namespace: namespace, Collection: collection, Members: members, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("SAdd", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // SAddTTL adds members that expire after ttl, returning the number newly added.
 func (cc *CollectionsClient) SAddTTL(ctx context.Context, namespace string, collection []byte, ttl time.Duration, members ...[]byte) (uint64, error) {
 	ms := ttl.Milliseconds()
-	resp, err := cc.c.collections.SAdd(ctx, connect.NewRequest(&wavespanv1.SAddRequest{
+	resp, err := cc.c.collections.SAdd(ctx, &wavespanv1.SAddRequest{
 		Namespace: namespace, Collection: collection, Members: members, TtlMs: &ms, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("SAddTTL", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // SRem removes members from the set, returning the number removed.
 func (cc *CollectionsClient) SRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.SRem(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
+	resp, err := cc.c.collections.SRem(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("SRem", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // SIsMember reports whether member is in the set.
 func (cc *CollectionsClient) SIsMember(ctx context.Context, namespace string, collection, member []byte, linearizable bool) (bool, error) {
-	resp, err := cc.c.collections.SIsMember(ctx, connect.NewRequest(&wavespanv1.MemberRequest{
+	resp, err := cc.c.collections.SIsMember(ctx, &wavespanv1.MemberRequest{
 		Namespace: namespace, Collection: collection, Member: member, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return false, wrapErr("SIsMember", err)
 	}
-	return resp.Msg.GetValue(), nil
+	return resp.GetValue(), nil
 }
 
 // SCard returns the set cardinality.
 func (cc *CollectionsClient) SCard(ctx context.Context, namespace string, collection []byte, linearizable bool) (uint64, error) {
-	resp, err := cc.c.collections.SCard(ctx, connect.NewRequest(&wavespanv1.CardRequest{
+	resp, err := cc.c.collections.SCard(ctx, &wavespanv1.CardRequest{
 		Namespace: namespace, Collection: collection, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("SCard", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // SMembers returns up to limit set members (0 = all).
 func (cc *CollectionsClient) SMembers(ctx context.Context, namespace string, collection []byte, limit int, linearizable bool) ([][]byte, error) {
-	resp, err := cc.c.collections.SMembers(ctx, connect.NewRequest(&wavespanv1.RangeRequest{
+	resp, err := cc.c.collections.SMembers(ctx, &wavespanv1.RangeRequest{
 		Namespace: namespace, Collection: collection, Limit: int32(limit), Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("SMembers", err)
 	}
-	return resp.Msg.GetMembers(), nil
+	return resp.GetMembers(), nil
 }
 
 // --- Hash ---
@@ -125,58 +124,58 @@ func (cc *CollectionsClient) HSet(ctx context.Context, namespace string, collect
 	for i, f := range fields {
 		pb[i] = &wavespanv1.FieldValue{Field: f.Field, Value: f.Value}
 	}
-	resp, err := cc.c.collections.HSet(ctx, connect.NewRequest(&wavespanv1.HSetRequest{
+	resp, err := cc.c.collections.HSet(ctx, &wavespanv1.HSetRequest{
 		Namespace: namespace, Collection: collection, Fields: pb, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("HSet", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // HDel deletes hash fields, returning the number removed.
 func (cc *CollectionsClient) HDel(ctx context.Context, namespace string, collection []byte, fields ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.HDel(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
+	resp, err := cc.c.collections.HDel(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: fields, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("HDel", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // HGet returns a hash field value and whether it was present.
 func (cc *CollectionsClient) HGet(ctx context.Context, namespace string, collection, field []byte, linearizable bool) ([]byte, bool, error) {
-	resp, err := cc.c.collections.HGet(ctx, connect.NewRequest(&wavespanv1.MemberRequest{
+	resp, err := cc.c.collections.HGet(ctx, &wavespanv1.MemberRequest{
 		Namespace: namespace, Collection: collection, Member: field, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return nil, false, wrapErr("HGet", err)
 	}
-	return resp.Msg.GetValue(), resp.Msg.GetFound(), nil
+	return resp.GetValue(), resp.GetFound(), nil
 }
 
 // HLen returns the number of hash fields.
 func (cc *CollectionsClient) HLen(ctx context.Context, namespace string, collection []byte, linearizable bool) (uint64, error) {
-	resp, err := cc.c.collections.HLen(ctx, connect.NewRequest(&wavespanv1.CardRequest{
+	resp, err := cc.c.collections.HLen(ctx, &wavespanv1.CardRequest{
 		Namespace: namespace, Collection: collection, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("HLen", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // HGetAll returns up to limit hash field/value pairs (0 = all).
 func (cc *CollectionsClient) HGetAll(ctx context.Context, namespace string, collection []byte, limit int, linearizable bool) ([]FieldValue, error) {
-	resp, err := cc.c.collections.HGetAll(ctx, connect.NewRequest(&wavespanv1.RangeRequest{
+	resp, err := cc.c.collections.HGetAll(ctx, &wavespanv1.RangeRequest{
 		Namespace: namespace, Collection: collection, Limit: int32(limit), Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("HGetAll", err)
 	}
-	out := make([]FieldValue, len(resp.Msg.GetFields()))
-	for i, f := range resp.Msg.GetFields() {
+	out := make([]FieldValue, len(resp.GetFields()))
+	for i, f := range resp.GetFields() {
 		out[i] = FieldValue{Field: f.GetField(), Value: f.GetValue()}
 	}
 	return out, nil
@@ -185,24 +184,24 @@ func (cc *CollectionsClient) HGetAll(ctx context.Context, namespace string, coll
 // HIncrBy atomically adds delta to an integer hash field and returns the new value (exact under
 // concurrency). Fails with InvalidArgument if the field's value is not an integer.
 func (cc *CollectionsClient) HIncrBy(ctx context.Context, namespace string, collection, field []byte, delta int64) (int64, error) {
-	resp, err := cc.c.collections.HIncrBy(ctx, connect.NewRequest(&wavespanv1.HIncrByRequest{
+	resp, err := cc.c.collections.HIncrBy(ctx, &wavespanv1.HIncrByRequest{
 		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("HIncrBy", err)
 	}
-	return resp.Msg.GetValue(), nil
+	return resp.GetValue(), nil
 }
 
 // HIncrByFloat atomically adds delta to a float hash field and returns the new value.
 func (cc *CollectionsClient) HIncrByFloat(ctx context.Context, namespace string, collection, field []byte, delta float64) (float64, error) {
-	resp, err := cc.c.collections.HIncrByFloat(ctx, connect.NewRequest(&wavespanv1.HIncrByFloatRequest{
+	resp, err := cc.c.collections.HIncrByFloat(ctx, &wavespanv1.HIncrByFloatRequest{
 		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("HIncrByFloat", err)
 	}
-	return resp.Msg.GetValue(), nil
+	return resp.GetValue(), nil
 }
 
 // --- Sorted set ---
@@ -213,58 +212,58 @@ func (cc *CollectionsClient) ZAdd(ctx context.Context, namespace string, collect
 	for i, m := range members {
 		pb[i] = &wavespanv1.ScoredMember{Member: m.Member, Score: m.Score}
 	}
-	resp, err := cc.c.collections.ZAdd(ctx, connect.NewRequest(&wavespanv1.ZAddRequest{
+	resp, err := cc.c.collections.ZAdd(ctx, &wavespanv1.ZAddRequest{
 		Namespace: namespace, Collection: collection, Members: pb, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("ZAdd", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // ZRem removes sorted-set members, returning the number removed.
 func (cc *CollectionsClient) ZRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.ZRem(ctx, connect.NewRequest(&wavespanv1.KeysRequest{
+	resp, err := cc.c.collections.ZRem(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("ZRem", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // ZScore returns a member's score and whether it was present.
 func (cc *CollectionsClient) ZScore(ctx context.Context, namespace string, collection, member []byte, linearizable bool) (float64, bool, error) {
-	resp, err := cc.c.collections.ZScore(ctx, connect.NewRequest(&wavespanv1.MemberRequest{
+	resp, err := cc.c.collections.ZScore(ctx, &wavespanv1.MemberRequest{
 		Namespace: namespace, Collection: collection, Member: member, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return 0, false, wrapErr("ZScore", err)
 	}
-	return resp.Msg.GetScore(), resp.Msg.GetFound(), nil
+	return resp.GetScore(), resp.GetFound(), nil
 }
 
 // ZCard returns the sorted-set cardinality.
 func (cc *CollectionsClient) ZCard(ctx context.Context, namespace string, collection []byte, linearizable bool) (uint64, error) {
-	resp, err := cc.c.collections.ZCard(ctx, connect.NewRequest(&wavespanv1.CardRequest{
+	resp, err := cc.c.collections.ZCard(ctx, &wavespanv1.CardRequest{
 		Namespace: namespace, Collection: collection, Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return 0, wrapErr("ZCard", err)
 	}
-	return resp.Msg.GetCount(), nil
+	return resp.GetCount(), nil
 }
 
 // ZRange returns members in ascending score order (limit 0 = all).
 func (cc *CollectionsClient) ZRange(ctx context.Context, namespace string, collection []byte, limit int, linearizable bool) ([]ScoredMember, error) {
-	resp, err := cc.c.collections.ZRange(ctx, connect.NewRequest(&wavespanv1.RangeRequest{
+	resp, err := cc.c.collections.ZRange(ctx, &wavespanv1.RangeRequest{
 		Namespace: namespace, Collection: collection, Limit: int32(limit), Linearizable: linearizable,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("ZRange", err)
 	}
-	out := make([]ScoredMember, len(resp.Msg.GetMembers()))
-	for i, m := range resp.Msg.GetMembers() {
+	out := make([]ScoredMember, len(resp.GetMembers()))
+	for i, m := range resp.GetMembers() {
 		out[i] = ScoredMember{Member: m.GetMember(), Score: m.GetScore()}
 	}
 	return out, nil
@@ -283,14 +282,14 @@ type BulkRemoveEntry struct {
 // collections is empty) every collection in the namespace. The removal is type-agnostic and
 // best-effort across shards; per-collection results are returned (design/30 §13.7).
 func (cc *CollectionsClient) BulkRemove(ctx context.Context, namespace string, collections, members [][]byte) ([]BulkRemoveEntry, error) {
-	resp, err := cc.c.collections.BulkRemove(ctx, connect.NewRequest(&wavespanv1.BulkRemoveRequest{
+	resp, err := cc.c.collections.BulkRemove(ctx, &wavespanv1.BulkRemoveRequest{
 		Namespace: namespace, Collections: collections, Members: members,
-	}))
+	})
 	if err != nil {
 		return nil, wrapErr("BulkRemove", err)
 	}
-	out := make([]BulkRemoveEntry, len(resp.Msg.GetResults()))
-	for i, e := range resp.Msg.GetResults() {
+	out := make([]BulkRemoveEntry, len(resp.GetResults()))
+	for i, e := range resp.GetResults() {
 		out[i] = BulkRemoveEntry{Collection: e.GetCollection(), Removed: e.GetRemoved(), Error: e.GetError()}
 	}
 	return out, nil
@@ -327,11 +326,11 @@ type TierStatus struct {
 // TierInfo reports the consensus-tier status of the node serving this call (placement, tunables, and
 // per-shard leader status) — a read-only operator view.
 func (cc *CollectionsClient) TierInfo(ctx context.Context) (TierStatus, error) {
-	resp, err := cc.c.collections.TierInfo(ctx, connect.NewRequest(&wavespanv1.TierInfoRequest{}))
+	resp, err := cc.c.collections.TierInfo(ctx, &wavespanv1.TierInfoRequest{})
 	if err != nil {
 		return TierStatus{}, wrapErr("TierInfo", err)
 	}
-	m := resp.Msg
+	m := resp
 	out := TierStatus{
 		Enabled: m.GetEnabled(), NodeHostID: m.GetNodeHostId(), RaftAddress: m.GetRaftAddress(),
 		SelfReplicaID: m.GetSelfReplicaId(), Voter: m.GetVoter(),

@@ -1,4 +1,4 @@
-# Regenerates the SDK's vendored protobuf messages + Connect client stubs into internal/gen from the
+# Regenerates the SDK's vendored protobuf messages + grpc-go client stubs into internal/gen from the
 # .proto contract in ./proto (the single source of truth, vendored from the WaveSpan server). Managed
 # mode rewrites go_package to the SDK's internal prefix. Run from the repo root:
 #
@@ -14,6 +14,6 @@ plugins:
   - local: protoc-gen-go
     out: internal/gen
     opt: paths=source_relative
-  - local: protoc-gen-connect-go
+  - local: protoc-gen-go-grpc
     out: internal/gen
     opt: paths=source_relative
