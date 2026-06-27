@@ -58,6 +58,7 @@ type Client struct {
 	vector      wavespanv1.VectorServiceClient
 	cypher      wavespanv1.CypherClient
 	collections wavespanv1.CollectionServiceClient
+	budget      wavespanv1.BudgetServiceClient
 }
 
 // Dial constructs a [Client] from Options. With grpc.NewClient the connection is established lazily,
@@ -111,6 +112,7 @@ func Dial(opts Options) (*Client, error) {
 		vector:      wavespanv1.NewVectorServiceClient(conn),
 		cypher:      wavespanv1.NewCypherClient(conn),
 		collections: wavespanv1.NewCollectionServiceClient(conn),
+		budget:      wavespanv1.NewBudgetServiceClient(conn),
 	}, nil
 }
 

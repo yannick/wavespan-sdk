@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// BudgetService is the LeasedBudget escrow API (design/35, Stage 1: single-cluster STRICT). A budget is
+// a pool of int64 micro-units that is leased out, spent against, and returned, with the conservation
+// invariant cap == available + leasedOut + spent held on every entry. Mutations are linearizable through
+// the owning shard's leader (like CollectionService); every response carries ResponseMeta. A mutation
+// that targets a collection of a different datatype fails with FailedPrecondition (WRONGTYPE).
+service BudgetService {
+  // BudgetDefine creates a STRICT pool with the given cap. A non-STRICT mode or invalid cap fails with
+  // InvalidArgument; defining an existing pool fails with FailedPrecondition.
+  rpc BudgetDefine(BudgetDefineRequest) returns (BudgetStatResult);
+  // BudgetGrant atomically leases up to amount_units; lease_id makes the grant idempotent for the
+  // lease's lifetime. A pool with nothing left returns no_capacity (a normal result, not an error).
+  rpc BudgetGrant(BudgetGrantRequest) returns (BudgetGrantResult);
+  // BudgetReport folds a cumulative-per-lease spent total (idempotent max fold).
+  rpc BudgetReport(BudgetReportRequest) returns (BudgetStatResult);
+  // BudgetReturn releases a lease's unspent remainder and deletes the lease row.
+  rpc BudgetReturn(BudgetReturnRequest) returns (BudgetStatResult);
+  // BudgetStat reads the pool accounting (bounded-stale unless linearizable).
+  rpc BudgetStat(BudgetStatRequest) returns (BudgetStatResult);
+}
+
+// BudgetMode selects the escrow discipline. Stage 1 ships STRICT only; RELAXED is reserved for Stage 4.
+enum BudgetMode {
+  BUDGET_MODE_UNSPECIFIED = 0;
+  BUDGET_MODE_STRICT = 1;
+  BUDGET_MODE_RELAXED = 2;
+}
+
+message BudgetDefineRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  int64 cap_units = 3;
+  BudgetMode mode = 4;
+  optional string idempotency_key = 5;
+}
+
+message BudgetGrantRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  string holder_id = 3;
+  int64 amount_units = 4;
+  bytes lease_id = 5; // idempotency key for the grant (single-use-forever in Stage 1)
+}
+
+message BudgetGrantResult {
+  ResponseMeta meta = 1;
+  int64 granted_units = 2;
+  bool partial = 3;     // granted_units < amount_units (saturated at available)
+  bool no_capacity = 4; // STRICT pool had nothing to give
+}
+
+message BudgetReportRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  bytes lease_id = 3;
+  int64 spent_cumulative = 4;
+}
+
+message BudgetReturnRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  bytes lease_id = 3;
+  int64 spent_cumulative = 4;
+}
+
+message BudgetStatRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  bool linearizable = 3;
+}
+
+message BudgetStatResult {
+  ResponseMeta meta = 1;
+  bool exists = 2;
+  int64 cap_units = 3;
+  int64 available_units = 4;
+  int64 leased_out_units = 5;
+  int64 spent_units = 6;
+  uint64 epoch = 7;
+  BudgetMode mode = 8;
+}
