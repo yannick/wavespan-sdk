@@ -37,6 +37,15 @@ message BudgetDefineRequest {
   int64 cap_units = 3;
   BudgetMode mode = 4;
   optional string idempotency_key = 5;
+  // Stage-2 pacing + timing config (all optional; zeros reproduce the Stage-1 non-paced, non-expiring
+  // budget). A timed budget (default_ttl_ms > 0) requires self_guard_ms >= the clock-skew bound and
+  // dedup_retry_window_ms >= the RPC-retry floor, else the define fails with InvalidArgument (I2/I3).
+  int64 rate_units_per_sec = 6;     // token-bucket refill rate (0 = no pacing)
+  int64 burst_units = 7;            // token-bucket ceiling (0 = default to cap_units)
+  int64 self_guard_ms = 8;          // holder self-fence band
+  int64 max_pause_ms = 9;           // holder max pause before self-fence
+  int64 default_ttl_ms = 10;        // default per-lease TTL (0 = non-expiring)
+  int64 dedup_retry_window_ms = 11; // tombstone GC / dedup window
 }
 
 message BudgetGrantRequest {
@@ -45,6 +54,9 @@ message BudgetGrantRequest {
   string holder_id = 3;
   int64 amount_units = 4;
   bytes lease_id = 5; // idempotency key for the grant (single-use-forever in Stage 1)
+  // Per-grant TTL override (0 ⇒ use the budget's default_ttl_ms). self_guard / max_pause are NOT
+  // per-grant — they are Define-time config (BudgetDefineRequest) and ride back on the result echo.
+  int64 ttl_ms = 6;
 }
 
 message BudgetGrantResult {
@@ -52,6 +64,13 @@ message BudgetGrantResult {
   int64 granted_units = 2;
   bool partial = 3;     // granted_units < amount_units (saturated at available)
   bool no_capacity = 4; // STRICT pool had nothing to give
+  // Effective timing echoed from the leader-stamped apply so the node-side lease cache can run the
+  // freshness gate, stamp its suspend-aware deadline, and set the self-fence (§5 M-4). All zero for a
+  // non-timed grant (ttl resolved to 0).
+  int64 granted_ms = 5;          // leader-stamped grant time (UnixMilli)
+  int64 ttl_ms = 6;              // effective lease TTL (override or budget default)
+  int64 self_guard_ms = 7;       // holder self-fence band (budget config)
+  int64 max_pause_budget_ms = 8; // holder max pause before self-fence (budget config)
 }
 
 message BudgetReportRequest {

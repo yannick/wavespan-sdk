@@ -73,13 +73,35 @@ func budgetStat(r *wavespanv1.BudgetStatResult) BudgetStat {
 	}
 }
 
-// Define creates a STRICT pool with the given cap. A non-STRICT mode or invalid cap fails with
-// InvalidArgument; defining an existing pool fails with FailedPrecondition.
-func (bc *BudgetClient) Define(ctx context.Context, namespace string, budget []byte, capUnits int64, mode BudgetMode) error {
-	_, err := bc.c.budget.BudgetDefine(ctx, &wavespanv1.BudgetDefineRequest{
+// BudgetDefineOptions carries the Stage-2 pacing + timing config for Define. The zero value (or nil opts)
+// reproduces the Stage-1 non-paced, non-expiring budget. A timed budget (DefaultTTLMs > 0) requires
+// SelfGuardMs and DedupRetryWindowMs above the server's safety floors, else Define fails with
+// InvalidArgument (I2/I3).
+type BudgetDefineOptions struct {
+	RateUnitsPerSec    int64 // token-bucket refill rate (0 = no pacing)
+	BurstUnits         int64 // token-bucket ceiling (0 = default to cap)
+	SelfGuardMs        int64 // holder self-fence band
+	MaxPauseMs         int64 // holder max pause before self-fence
+	DefaultTTLMs       int64 // default per-lease TTL (0 = non-expiring)
+	DedupRetryWindowMs int64 // tombstone GC / dedup window
+}
+
+// Define creates a budget pool with the given cap and mode (Stage 1: STRICT only). A non-STRICT mode, an
+// invalid cap, or an out-of-bounds pacing/timing param fails with InvalidArgument; defining an existing
+// pool fails with FailedPrecondition. Pass nil opts for a non-paced, non-expiring budget.
+func (bc *BudgetClient) Define(ctx context.Context, namespace string, budget []byte, capUnits int64, mode BudgetMode, opts *BudgetDefineOptions) error {
+	req := &wavespanv1.BudgetDefineRequest{
 		Namespace: namespace, Budget: budget, CapUnits: capUnits, Mode: mode, IdempotencyKey: bc.idemPtr(),
-	})
-	if err != nil {
+	}
+	if opts != nil {
+		req.RateUnitsPerSec = opts.RateUnitsPerSec
+		req.BurstUnits = opts.BurstUnits
+		req.SelfGuardMs = opts.SelfGuardMs
+		req.MaxPauseMs = opts.MaxPauseMs
+		req.DefaultTtlMs = opts.DefaultTTLMs
+		req.DedupRetryWindowMs = opts.DedupRetryWindowMs
+	}
+	if _, err := bc.c.budget.BudgetDefine(ctx, req); err != nil {
 		return wrapErr("BudgetDefine", err)
 	}
 	return nil
