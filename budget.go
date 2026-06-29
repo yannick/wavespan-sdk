@@ -52,24 +52,28 @@ const (
 // BudgetStat is a pool's accounting snapshot. The conservation invariant holds: CapUnits ==
 // AvailableUnits + LeasedOutUnits + SpentUnits.
 type BudgetStat struct {
-	Exists         bool       // false = no such pool (the other fields are zero)
-	CapUnits       int64      // total pool capacity
-	AvailableUnits int64      // units free to be granted
-	LeasedOutUnits int64      // units currently held by live leases, not yet reported spent
-	SpentUnits     int64      // units reported spent (folded as a max per lease)
-	Epoch          uint64     // monotonic pool epoch (bumped on each mutation)
-	Mode           BudgetMode // escrow discipline (STRICT in Stage 1)
+	Exists         bool  // false = no such pool (the other fields are zero)
+	CapUnits       int64 // total pool capacity
+	AvailableUnits int64 // units free to be granted
+	LeasedOutUnits int64 // units currently held by live leases, not yet reported spent
+	SpentUnits     int64 // units reported spent (folded as a max per lease)
+	// SpentReportedUnits is the cumulative spend actually attested by holders (<= SpentUnits). The gap
+	// SpentUnits - SpentReportedUnits is the maximum recoverable stranding from forced expiries.
+	SpentReportedUnits int64
+	Epoch              uint64     // monotonic pool epoch (bumped on each mutation)
+	Mode               BudgetMode // escrow discipline (STRICT in Stage 1)
 }
 
 func budgetStat(r *wavespanv1.BudgetStatResult) BudgetStat {
 	return BudgetStat{
-		Exists:         r.GetExists(),
-		CapUnits:       r.GetCapUnits(),
-		AvailableUnits: r.GetAvailableUnits(),
-		LeasedOutUnits: r.GetLeasedOutUnits(),
-		SpentUnits:     r.GetSpentUnits(),
-		Epoch:          r.GetEpoch(),
-		Mode:           r.GetMode(),
+		Exists:             r.GetExists(),
+		CapUnits:           r.GetCapUnits(),
+		AvailableUnits:     r.GetAvailableUnits(),
+		LeasedOutUnits:     r.GetLeasedOutUnits(),
+		SpentUnits:         r.GetSpentUnits(),
+		SpentReportedUnits: r.GetSpentReportedUnits(),
+		Epoch:              r.GetEpoch(),
+		Mode:               r.GetMode(),
 	}
 }
 

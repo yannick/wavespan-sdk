@@ -614,8 +614,12 @@ type BudgetStatResult struct {
 	SpentUnits     int64                  `protobuf:"varint,6,opt,name=spent_units,json=spentUnits,proto3" json:"spent_units,omitempty"`
 	Epoch          uint64                 `protobuf:"varint,7,opt,name=epoch,proto3" json:"epoch,omitempty"`
 	Mode           BudgetMode             `protobuf:"varint,8,opt,name=mode,proto3,enum=wavespan.v1.BudgetMode" json:"mode,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// spent_reported_units is the cumulative spend actually attested by holders (<= spent_units); a forced
+	// expiry's pessimistic debit grows spent_units but NOT this. spent_units - spent_reported_units is the
+	// maximum recoverable stranding. Informational — NOT part of the conservation invariant.
+	SpentReportedUnits int64 `protobuf:"varint,9,opt,name=spent_reported_units,json=spentReportedUnits,proto3" json:"spent_reported_units,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *BudgetStatResult) Reset() {
@@ -704,6 +708,13 @@ func (x *BudgetStatResult) GetMode() BudgetMode {
 	return BudgetMode_BUDGET_MODE_UNSPECIFIED
 }
 
+func (x *BudgetStatResult) GetSpentReportedUnits() int64 {
+	if x != nil {
+		return x.SpentReportedUnits
+	}
+	return 0
+}
+
 var File_wavespan_v1_budget_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_budget_proto_rawDesc = "" +
@@ -758,7 +769,7 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"\x11BudgetStatRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\"\n" +
-	"\flinearizable\x18\x03 \x01(\bR\flinearizable\"\xad\x02\n" +
+	"\flinearizable\x18\x03 \x01(\bR\flinearizable\"\xdf\x02\n" +
 	"\x10BudgetStatResult\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12\x16\n" +
 	"\x06exists\x18\x02 \x01(\bR\x06exists\x12\x1b\n" +
@@ -768,7 +779,8 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"\vspent_units\x18\x06 \x01(\x03R\n" +
 	"spentUnits\x12\x14\n" +
 	"\x05epoch\x18\a \x01(\x04R\x05epoch\x12+\n" +
-	"\x04mode\x18\b \x01(\x0e2\x17.wavespan.v1.BudgetModeR\x04mode*Z\n" +
+	"\x04mode\x18\b \x01(\x0e2\x17.wavespan.v1.BudgetModeR\x04mode\x120\n" +
+	"\x14spent_reported_units\x18\t \x01(\x03R\x12spentReportedUnits*Z\n" +
 	"\n" +
 	"BudgetMode\x12\x1b\n" +
 	"\x17BUDGET_MODE_UNSPECIFIED\x10\x00\x12\x16\n" +

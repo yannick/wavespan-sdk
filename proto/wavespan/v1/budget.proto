@@ -109,4 +109,8 @@ message BudgetStatResult {
   int64 spent_units = 6;
   uint64 epoch = 7;
   BudgetMode mode = 8;
+  // spent_reported_units is the cumulative spend actually attested by holders (<= spent_units); a forced
+  // expiry's pessimistic debit grows spent_units but NOT this. spent_units - spent_reported_units is the
+  // maximum recoverable stranding. Informational — NOT part of the conservation invariant.
+  int64 spent_reported_units = 9;
 }
