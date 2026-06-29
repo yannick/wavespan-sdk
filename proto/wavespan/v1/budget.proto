@@ -20,6 +20,11 @@ service BudgetService {
   rpc BudgetReport(BudgetReportRequest) returns (BudgetStatResult);
   // BudgetReturn releases a lease's unspent remainder and deletes the lease row.
   rpc BudgetReturn(BudgetReturnRequest) returns (BudgetStatResult);
+  // BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the
+  // headroom a forced lease expiry stranded as underspend — without overspend (§3.8). Controller/admin
+  // surface only; not exposed on the read-only HTTP gateway. The result's recovered_units carries the
+  // recovered amount (old spent - new spent).
+  rpc BudgetReconcile(BudgetReconcileRequest) returns (BudgetStatResult);
   // BudgetStat reads the pool accounting (bounded-stale unless linearizable).
   rpc BudgetStat(BudgetStatRequest) returns (BudgetStatResult);
 }
@@ -94,6 +99,16 @@ message BudgetReturnRequest {
   string holder_id = 5;
 }
 
+message BudgetReconcileRequest {
+  string namespace = 1;
+  bytes budget = 2;
+  // true_acked_units is the AUTHORITATIVE cumulative spend from the external impression/billing ledger.
+  // The server clamps it to [spent_reported_units, cap_units] before booking it as spent: the floor is the
+  // money-safety crux (never under-credit provably-reported spend), the ceiling rejects nonsense.
+  int64 true_acked_units = 3;
+  optional string idempotency_key = 4;
+}
+
 message BudgetStatRequest {
   string namespace = 1;
   bytes budget = 2;
@@ -113,4 +128,7 @@ message BudgetStatResult {
   // expiry's pessimistic debit grows spent_units but NOT this. spent_units - spent_reported_units is the
   // maximum recoverable stranding. Informational — NOT part of the conservation invariant.
   int64 spent_reported_units = 9;
+  // recovered_units is set ONLY by BudgetReconcile: the amount re-credited (old spent - new spent;
+  // negative if the external Σ-acked total booked MORE than the pool had). Zero on every other RPC.
+  int64 recovered_units = 10;
 }

@@ -19,11 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	BudgetService_BudgetDefine_FullMethodName = "/wavespan.v1.BudgetService/BudgetDefine"
-	BudgetService_BudgetGrant_FullMethodName  = "/wavespan.v1.BudgetService/BudgetGrant"
-	BudgetService_BudgetReport_FullMethodName = "/wavespan.v1.BudgetService/BudgetReport"
-	BudgetService_BudgetReturn_FullMethodName = "/wavespan.v1.BudgetService/BudgetReturn"
-	BudgetService_BudgetStat_FullMethodName   = "/wavespan.v1.BudgetService/BudgetStat"
+	BudgetService_BudgetDefine_FullMethodName    = "/wavespan.v1.BudgetService/BudgetDefine"
+	BudgetService_BudgetGrant_FullMethodName     = "/wavespan.v1.BudgetService/BudgetGrant"
+	BudgetService_BudgetReport_FullMethodName    = "/wavespan.v1.BudgetService/BudgetReport"
+	BudgetService_BudgetReturn_FullMethodName    = "/wavespan.v1.BudgetService/BudgetReturn"
+	BudgetService_BudgetReconcile_FullMethodName = "/wavespan.v1.BudgetService/BudgetReconcile"
+	BudgetService_BudgetStat_FullMethodName      = "/wavespan.v1.BudgetService/BudgetStat"
 )
 
 // BudgetServiceClient is the client API for BudgetService service.
@@ -46,6 +47,11 @@ type BudgetServiceClient interface {
 	BudgetReport(ctx context.Context, in *BudgetReportRequest, opts ...grpc.CallOption) (*BudgetStatResult, error)
 	// BudgetReturn releases a lease's unspent remainder and deletes the lease row.
 	BudgetReturn(ctx context.Context, in *BudgetReturnRequest, opts ...grpc.CallOption) (*BudgetStatResult, error)
+	// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the
+	// headroom a forced lease expiry stranded as underspend — without overspend (§3.8). Controller/admin
+	// surface only; not exposed on the read-only HTTP gateway. The result's recovered_units carries the
+	// recovered amount (old spent - new spent).
+	BudgetReconcile(ctx context.Context, in *BudgetReconcileRequest, opts ...grpc.CallOption) (*BudgetStatResult, error)
 	// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
 	BudgetStat(ctx context.Context, in *BudgetStatRequest, opts ...grpc.CallOption) (*BudgetStatResult, error)
 }
@@ -98,6 +104,16 @@ func (c *budgetServiceClient) BudgetReturn(ctx context.Context, in *BudgetReturn
 	return out, nil
 }
 
+func (c *budgetServiceClient) BudgetReconcile(ctx context.Context, in *BudgetReconcileRequest, opts ...grpc.CallOption) (*BudgetStatResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BudgetStatResult)
+	err := c.cc.Invoke(ctx, BudgetService_BudgetReconcile_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *budgetServiceClient) BudgetStat(ctx context.Context, in *BudgetStatRequest, opts ...grpc.CallOption) (*BudgetStatResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BudgetStatResult)
@@ -128,6 +144,11 @@ type BudgetServiceServer interface {
 	BudgetReport(context.Context, *BudgetReportRequest) (*BudgetStatResult, error)
 	// BudgetReturn releases a lease's unspent remainder and deletes the lease row.
 	BudgetReturn(context.Context, *BudgetReturnRequest) (*BudgetStatResult, error)
+	// BudgetReconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the
+	// headroom a forced lease expiry stranded as underspend — without overspend (§3.8). Controller/admin
+	// surface only; not exposed on the read-only HTTP gateway. The result's recovered_units carries the
+	// recovered amount (old spent - new spent).
+	BudgetReconcile(context.Context, *BudgetReconcileRequest) (*BudgetStatResult, error)
 	// BudgetStat reads the pool accounting (bounded-stale unless linearizable).
 	BudgetStat(context.Context, *BudgetStatRequest) (*BudgetStatResult, error)
 	mustEmbedUnimplementedBudgetServiceServer()
@@ -151,6 +172,9 @@ func (UnimplementedBudgetServiceServer) BudgetReport(context.Context, *BudgetRep
 }
 func (UnimplementedBudgetServiceServer) BudgetReturn(context.Context, *BudgetReturnRequest) (*BudgetStatResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method BudgetReturn not implemented")
+}
+func (UnimplementedBudgetServiceServer) BudgetReconcile(context.Context, *BudgetReconcileRequest) (*BudgetStatResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method BudgetReconcile not implemented")
 }
 func (UnimplementedBudgetServiceServer) BudgetStat(context.Context, *BudgetStatRequest) (*BudgetStatResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method BudgetStat not implemented")
@@ -248,6 +272,24 @@ func _BudgetService_BudgetReturn_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BudgetService_BudgetReconcile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BudgetReconcileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BudgetServiceServer).BudgetReconcile(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BudgetService_BudgetReconcile_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BudgetServiceServer).BudgetReconcile(ctx, req.(*BudgetReconcileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _BudgetService_BudgetStat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BudgetStatRequest)
 	if err := dec(in); err != nil {
@@ -288,6 +330,10 @@ var BudgetService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BudgetReturn",
 			Handler:    _BudgetService_BudgetReturn_Handler,
+		},
+		{
+			MethodName: "BudgetReconcile",
+			Handler:    _BudgetService_BudgetReconcile_Handler,
 		},
 		{
 			MethodName: "BudgetStat",

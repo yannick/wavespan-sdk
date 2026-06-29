@@ -544,6 +544,77 @@ func (x *BudgetReturnRequest) GetHolderId() string {
 	return ""
 }
 
+type BudgetReconcileRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Namespace string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Budget    []byte                 `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
+	// true_acked_units is the AUTHORITATIVE cumulative spend from the external impression/billing ledger.
+	// The server clamps it to [spent_reported_units, cap_units] before booking it as spent: the floor is the
+	// money-safety crux (never under-credit provably-reported spend), the ceiling rejects nonsense.
+	TrueAckedUnits int64   `protobuf:"varint,3,opt,name=true_acked_units,json=trueAckedUnits,proto3" json:"true_acked_units,omitempty"`
+	IdempotencyKey *string `protobuf:"bytes,4,opt,name=idempotency_key,json=idempotencyKey,proto3,oneof" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BudgetReconcileRequest) Reset() {
+	*x = BudgetReconcileRequest{}
+	mi := &file_wavespan_v1_budget_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BudgetReconcileRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BudgetReconcileRequest) ProtoMessage() {}
+
+func (x *BudgetReconcileRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_budget_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BudgetReconcileRequest.ProtoReflect.Descriptor instead.
+func (*BudgetReconcileRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_budget_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BudgetReconcileRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *BudgetReconcileRequest) GetBudget() []byte {
+	if x != nil {
+		return x.Budget
+	}
+	return nil
+}
+
+func (x *BudgetReconcileRequest) GetTrueAckedUnits() int64 {
+	if x != nil {
+		return x.TrueAckedUnits
+	}
+	return 0
+}
+
+func (x *BudgetReconcileRequest) GetIdempotencyKey() string {
+	if x != nil && x.IdempotencyKey != nil {
+		return *x.IdempotencyKey
+	}
+	return ""
+}
+
 type BudgetStatRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
@@ -555,7 +626,7 @@ type BudgetStatRequest struct {
 
 func (x *BudgetStatRequest) Reset() {
 	*x = BudgetStatRequest{}
-	mi := &file_wavespan_v1_budget_proto_msgTypes[5]
+	mi := &file_wavespan_v1_budget_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -567,7 +638,7 @@ func (x *BudgetStatRequest) String() string {
 func (*BudgetStatRequest) ProtoMessage() {}
 
 func (x *BudgetStatRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_budget_proto_msgTypes[5]
+	mi := &file_wavespan_v1_budget_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -580,7 +651,7 @@ func (x *BudgetStatRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BudgetStatRequest.ProtoReflect.Descriptor instead.
 func (*BudgetStatRequest) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_budget_proto_rawDescGZIP(), []int{5}
+	return file_wavespan_v1_budget_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *BudgetStatRequest) GetNamespace() string {
@@ -618,13 +689,16 @@ type BudgetStatResult struct {
 	// expiry's pessimistic debit grows spent_units but NOT this. spent_units - spent_reported_units is the
 	// maximum recoverable stranding. Informational — NOT part of the conservation invariant.
 	SpentReportedUnits int64 `protobuf:"varint,9,opt,name=spent_reported_units,json=spentReportedUnits,proto3" json:"spent_reported_units,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// recovered_units is set ONLY by BudgetReconcile: the amount re-credited (old spent - new spent;
+	// negative if the external Σ-acked total booked MORE than the pool had). Zero on every other RPC.
+	RecoveredUnits int64 `protobuf:"varint,10,opt,name=recovered_units,json=recoveredUnits,proto3" json:"recovered_units,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *BudgetStatResult) Reset() {
 	*x = BudgetStatResult{}
-	mi := &file_wavespan_v1_budget_proto_msgTypes[6]
+	mi := &file_wavespan_v1_budget_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -636,7 +710,7 @@ func (x *BudgetStatResult) String() string {
 func (*BudgetStatResult) ProtoMessage() {}
 
 func (x *BudgetStatResult) ProtoReflect() protoreflect.Message {
-	mi := &file_wavespan_v1_budget_proto_msgTypes[6]
+	mi := &file_wavespan_v1_budget_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -649,7 +723,7 @@ func (x *BudgetStatResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BudgetStatResult.ProtoReflect.Descriptor instead.
 func (*BudgetStatResult) Descriptor() ([]byte, []int) {
-	return file_wavespan_v1_budget_proto_rawDescGZIP(), []int{6}
+	return file_wavespan_v1_budget_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BudgetStatResult) GetMeta() *ResponseMeta {
@@ -715,6 +789,13 @@ func (x *BudgetStatResult) GetSpentReportedUnits() int64 {
 	return 0
 }
 
+func (x *BudgetStatResult) GetRecoveredUnits() int64 {
+	if x != nil {
+		return x.RecoveredUnits
+	}
+	return 0
+}
+
 var File_wavespan_v1_budget_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_budget_proto_rawDesc = "" +
@@ -765,11 +846,17 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x19\n" +
 	"\blease_id\x18\x03 \x01(\fR\aleaseId\x12)\n" +
 	"\x10spent_cumulative\x18\x04 \x01(\x03R\x0fspentCumulative\x12\x1b\n" +
-	"\tholder_id\x18\x05 \x01(\tR\bholderId\"m\n" +
+	"\tholder_id\x18\x05 \x01(\tR\bholderId\"\xba\x01\n" +
+	"\x16BudgetReconcileRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
+	"\x06budget\x18\x02 \x01(\fR\x06budget\x12(\n" +
+	"\x10true_acked_units\x18\x03 \x01(\x03R\x0etrueAckedUnits\x12,\n" +
+	"\x0fidempotency_key\x18\x04 \x01(\tH\x00R\x0eidempotencyKey\x88\x01\x01B\x12\n" +
+	"\x10_idempotency_key\"m\n" +
 	"\x11BudgetStatRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\"\n" +
-	"\flinearizable\x18\x03 \x01(\bR\flinearizable\"\xdf\x02\n" +
+	"\flinearizable\x18\x03 \x01(\bR\flinearizable\"\x88\x03\n" +
 	"\x10BudgetStatResult\x12-\n" +
 	"\x04meta\x18\x01 \x01(\v2\x19.wavespan.v1.ResponseMetaR\x04meta\x12\x16\n" +
 	"\x06exists\x18\x02 \x01(\bR\x06exists\x12\x1b\n" +
@@ -780,17 +867,20 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"spentUnits\x12\x14\n" +
 	"\x05epoch\x18\a \x01(\x04R\x05epoch\x12+\n" +
 	"\x04mode\x18\b \x01(\x0e2\x17.wavespan.v1.BudgetModeR\x04mode\x120\n" +
-	"\x14spent_reported_units\x18\t \x01(\x03R\x12spentReportedUnits*Z\n" +
+	"\x14spent_reported_units\x18\t \x01(\x03R\x12spentReportedUnits\x12'\n" +
+	"\x0frecovered_units\x18\n" +
+	" \x01(\x03R\x0erecoveredUnits*Z\n" +
 	"\n" +
 	"BudgetMode\x12\x1b\n" +
 	"\x17BUDGET_MODE_UNSPECIFIED\x10\x00\x12\x16\n" +
 	"\x12BUDGET_MODE_STRICT\x10\x01\x12\x17\n" +
-	"\x13BUDGET_MODE_RELAXED\x10\x022\x9f\x03\n" +
+	"\x13BUDGET_MODE_RELAXED\x10\x022\xf6\x03\n" +
 	"\rBudgetService\x12O\n" +
 	"\fBudgetDefine\x12 .wavespan.v1.BudgetDefineRequest\x1a\x1d.wavespan.v1.BudgetStatResult\x12N\n" +
 	"\vBudgetGrant\x12\x1f.wavespan.v1.BudgetGrantRequest\x1a\x1e.wavespan.v1.BudgetGrantResult\x12O\n" +
 	"\fBudgetReport\x12 .wavespan.v1.BudgetReportRequest\x1a\x1d.wavespan.v1.BudgetStatResult\x12O\n" +
-	"\fBudgetReturn\x12 .wavespan.v1.BudgetReturnRequest\x1a\x1d.wavespan.v1.BudgetStatResult\x12K\n" +
+	"\fBudgetReturn\x12 .wavespan.v1.BudgetReturnRequest\x1a\x1d.wavespan.v1.BudgetStatResult\x12U\n" +
+	"\x0fBudgetReconcile\x12#.wavespan.v1.BudgetReconcileRequest\x1a\x1d.wavespan.v1.BudgetStatResult\x12K\n" +
 	"\n" +
 	"BudgetStat\x12\x1e.wavespan.v1.BudgetStatRequest\x1a\x1d.wavespan.v1.BudgetStatResultB\xb0\x01\n" +
 	"\x0fcom.wavespan.v1B\vBudgetProtoP\x01ZCgithub.com/yannick/wavespan-sdk/internal/gen/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
@@ -808,38 +898,41 @@ func file_wavespan_v1_budget_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_budget_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_budget_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_wavespan_v1_budget_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_wavespan_v1_budget_proto_goTypes = []any{
-	(BudgetMode)(0),             // 0: wavespan.v1.BudgetMode
-	(*BudgetDefineRequest)(nil), // 1: wavespan.v1.BudgetDefineRequest
-	(*BudgetGrantRequest)(nil),  // 2: wavespan.v1.BudgetGrantRequest
-	(*BudgetGrantResult)(nil),   // 3: wavespan.v1.BudgetGrantResult
-	(*BudgetReportRequest)(nil), // 4: wavespan.v1.BudgetReportRequest
-	(*BudgetReturnRequest)(nil), // 5: wavespan.v1.BudgetReturnRequest
-	(*BudgetStatRequest)(nil),   // 6: wavespan.v1.BudgetStatRequest
-	(*BudgetStatResult)(nil),    // 7: wavespan.v1.BudgetStatResult
-	(*ResponseMeta)(nil),        // 8: wavespan.v1.ResponseMeta
+	(BudgetMode)(0),                // 0: wavespan.v1.BudgetMode
+	(*BudgetDefineRequest)(nil),    // 1: wavespan.v1.BudgetDefineRequest
+	(*BudgetGrantRequest)(nil),     // 2: wavespan.v1.BudgetGrantRequest
+	(*BudgetGrantResult)(nil),      // 3: wavespan.v1.BudgetGrantResult
+	(*BudgetReportRequest)(nil),    // 4: wavespan.v1.BudgetReportRequest
+	(*BudgetReturnRequest)(nil),    // 5: wavespan.v1.BudgetReturnRequest
+	(*BudgetReconcileRequest)(nil), // 6: wavespan.v1.BudgetReconcileRequest
+	(*BudgetStatRequest)(nil),      // 7: wavespan.v1.BudgetStatRequest
+	(*BudgetStatResult)(nil),       // 8: wavespan.v1.BudgetStatResult
+	(*ResponseMeta)(nil),           // 9: wavespan.v1.ResponseMeta
 }
 var file_wavespan_v1_budget_proto_depIdxs = []int32{
-	0, // 0: wavespan.v1.BudgetDefineRequest.mode:type_name -> wavespan.v1.BudgetMode
-	8, // 1: wavespan.v1.BudgetGrantResult.meta:type_name -> wavespan.v1.ResponseMeta
-	8, // 2: wavespan.v1.BudgetStatResult.meta:type_name -> wavespan.v1.ResponseMeta
-	0, // 3: wavespan.v1.BudgetStatResult.mode:type_name -> wavespan.v1.BudgetMode
-	1, // 4: wavespan.v1.BudgetService.BudgetDefine:input_type -> wavespan.v1.BudgetDefineRequest
-	2, // 5: wavespan.v1.BudgetService.BudgetGrant:input_type -> wavespan.v1.BudgetGrantRequest
-	4, // 6: wavespan.v1.BudgetService.BudgetReport:input_type -> wavespan.v1.BudgetReportRequest
-	5, // 7: wavespan.v1.BudgetService.BudgetReturn:input_type -> wavespan.v1.BudgetReturnRequest
-	6, // 8: wavespan.v1.BudgetService.BudgetStat:input_type -> wavespan.v1.BudgetStatRequest
-	7, // 9: wavespan.v1.BudgetService.BudgetDefine:output_type -> wavespan.v1.BudgetStatResult
-	3, // 10: wavespan.v1.BudgetService.BudgetGrant:output_type -> wavespan.v1.BudgetGrantResult
-	7, // 11: wavespan.v1.BudgetService.BudgetReport:output_type -> wavespan.v1.BudgetStatResult
-	7, // 12: wavespan.v1.BudgetService.BudgetReturn:output_type -> wavespan.v1.BudgetStatResult
-	7, // 13: wavespan.v1.BudgetService.BudgetStat:output_type -> wavespan.v1.BudgetStatResult
-	9, // [9:14] is the sub-list for method output_type
-	4, // [4:9] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	0,  // 0: wavespan.v1.BudgetDefineRequest.mode:type_name -> wavespan.v1.BudgetMode
+	9,  // 1: wavespan.v1.BudgetGrantResult.meta:type_name -> wavespan.v1.ResponseMeta
+	9,  // 2: wavespan.v1.BudgetStatResult.meta:type_name -> wavespan.v1.ResponseMeta
+	0,  // 3: wavespan.v1.BudgetStatResult.mode:type_name -> wavespan.v1.BudgetMode
+	1,  // 4: wavespan.v1.BudgetService.BudgetDefine:input_type -> wavespan.v1.BudgetDefineRequest
+	2,  // 5: wavespan.v1.BudgetService.BudgetGrant:input_type -> wavespan.v1.BudgetGrantRequest
+	4,  // 6: wavespan.v1.BudgetService.BudgetReport:input_type -> wavespan.v1.BudgetReportRequest
+	5,  // 7: wavespan.v1.BudgetService.BudgetReturn:input_type -> wavespan.v1.BudgetReturnRequest
+	6,  // 8: wavespan.v1.BudgetService.BudgetReconcile:input_type -> wavespan.v1.BudgetReconcileRequest
+	7,  // 9: wavespan.v1.BudgetService.BudgetStat:input_type -> wavespan.v1.BudgetStatRequest
+	8,  // 10: wavespan.v1.BudgetService.BudgetDefine:output_type -> wavespan.v1.BudgetStatResult
+	3,  // 11: wavespan.v1.BudgetService.BudgetGrant:output_type -> wavespan.v1.BudgetGrantResult
+	8,  // 12: wavespan.v1.BudgetService.BudgetReport:output_type -> wavespan.v1.BudgetStatResult
+	8,  // 13: wavespan.v1.BudgetService.BudgetReturn:output_type -> wavespan.v1.BudgetStatResult
+	8,  // 14: wavespan.v1.BudgetService.BudgetReconcile:output_type -> wavespan.v1.BudgetStatResult
+	8,  // 15: wavespan.v1.BudgetService.BudgetStat:output_type -> wavespan.v1.BudgetStatResult
+	10, // [10:16] is the sub-list for method output_type
+	4,  // [4:10] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_budget_proto_init() }
@@ -849,13 +942,14 @@ func file_wavespan_v1_budget_proto_init() {
 	}
 	file_wavespan_v1_common_proto_init()
 	file_wavespan_v1_budget_proto_msgTypes[0].OneofWrappers = []any{}
+	file_wavespan_v1_budget_proto_msgTypes[5].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_budget_proto_rawDesc), len(file_wavespan_v1_budget_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

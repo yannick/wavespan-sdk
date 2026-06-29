@@ -151,6 +151,22 @@ func (bc *BudgetClient) Return(ctx context.Context, namespace string, budget, le
 	return nil
 }
 
+// Reconcile re-credits a budget to its authoritative external Σ-acked spend, recovering the headroom a
+// forced lease expiry stranded as underspend — without overspend (design/35 §3.8). This is the CONTROLLER
+// surface: pass the cumulative Σ-acked total from the external impression/billing ledger; the server clamps
+// it to [spentReported, cap] (never under-credits provably-reported spend) and books it as the pool's
+// spend. It returns the recovered amount (old spent - new spent; negative if the external total booked more
+// than the pool had). A reconcile against an undefined pool fails with FailedPrecondition.
+func (bc *BudgetClient) Reconcile(ctx context.Context, namespace string, budget []byte, trueAckedUnits int64) (int64, error) {
+	resp, err := bc.c.budget.BudgetReconcile(ctx, &wavespanv1.BudgetReconcileRequest{
+		Namespace: namespace, Budget: budget, TrueAckedUnits: trueAckedUnits, IdempotencyKey: bc.idemPtr(),
+	})
+	if err != nil {
+		return 0, wrapErr("BudgetReconcile", err)
+	}
+	return resp.GetRecoveredUnits(), nil
+}
+
 // Stat reads the pool accounting (bounded-stale unless linearizable). The returned BudgetStat has
 // Exists=false when no such pool is defined.
 func (bc *BudgetClient) Stat(ctx context.Context, namespace string, budget []byte, linearizable bool) (BudgetStat, error) {
