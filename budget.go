@@ -122,10 +122,11 @@ func (bc *BudgetClient) Grant(ctx context.Context, namespace string, budget, hol
 }
 
 // Report folds a cumulative-per-lease spent total into the pool (idempotent max fold), returning the
-// pool's accounting after the fold.
-func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, leaseID []byte, spentCumulative int64) error {
+// pool's accounting after the fold. holder binds the report to the lease's grantee — pass the same holder
+// used at Grant; a mismatch fails with PermissionDenied. Pass nil to omit the check (lenient, back-compat).
+func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, leaseID, holder []byte, spentCumulative int64) error {
 	_, err := bc.c.budget.BudgetReport(ctx, &wavespanv1.BudgetReportRequest{
-		Namespace: namespace, Budget: budget, LeaseId: leaseID, SpentCumulative: spentCumulative,
+		Namespace: namespace, Budget: budget, LeaseId: leaseID, HolderId: string(holder), SpentCumulative: spentCumulative,
 	})
 	if err != nil {
 		return wrapErr("BudgetReport", err)
@@ -134,10 +135,11 @@ func (bc *BudgetClient) Report(ctx context.Context, namespace string, budget, le
 }
 
 // Return releases a lease's unspent remainder (folding spentCumulative as a final spent total) and
-// deletes the lease row.
-func (bc *BudgetClient) Return(ctx context.Context, namespace string, budget, leaseID []byte, spentCumulative int64) error {
+// deletes the lease row. holder binds the return to the lease's grantee (same match-or-PermissionDenied
+// rule as Report; nil is lenient).
+func (bc *BudgetClient) Return(ctx context.Context, namespace string, budget, leaseID, holder []byte, spentCumulative int64) error {
 	_, err := bc.c.budget.BudgetReturn(ctx, &wavespanv1.BudgetReturnRequest{
-		Namespace: namespace, Budget: budget, LeaseId: leaseID, SpentCumulative: spentCumulative,
+		Namespace: namespace, Budget: budget, LeaseId: leaseID, HolderId: string(holder), SpentCumulative: spentCumulative,
 	})
 	if err != nil {
 		return wrapErr("BudgetReturn", err)

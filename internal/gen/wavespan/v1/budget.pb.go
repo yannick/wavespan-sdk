@@ -393,8 +393,12 @@ type BudgetReportRequest struct {
 	Budget          []byte                 `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
 	LeaseId         []byte                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	SpentCumulative int64                  `protobuf:"varint,4,opt,name=spent_cumulative,json=spentCumulative,proto3" json:"spent_cumulative,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// holder_id binds the report to the lease's grantee. When non-empty it must match the lease's recorded
+	// holder, else the report fails with PermissionDenied (closes the Return/Report-tampering + nodeID-
+	// collision bug). Empty is lenient (back-compat): a caller that omits it is not holder-checked.
+	HolderId      string `protobuf:"bytes,5,opt,name=holder_id,json=holderId,proto3" json:"holder_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BudgetReportRequest) Reset() {
@@ -455,14 +459,24 @@ func (x *BudgetReportRequest) GetSpentCumulative() int64 {
 	return 0
 }
 
+func (x *BudgetReportRequest) GetHolderId() string {
+	if x != nil {
+		return x.HolderId
+	}
+	return ""
+}
+
 type BudgetReturnRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
 	Namespace       string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
 	Budget          []byte                 `protobuf:"bytes,2,opt,name=budget,proto3" json:"budget,omitempty"`
 	LeaseId         []byte                 `protobuf:"bytes,3,opt,name=lease_id,json=leaseId,proto3" json:"lease_id,omitempty"`
 	SpentCumulative int64                  `protobuf:"varint,4,opt,name=spent_cumulative,json=spentCumulative,proto3" json:"spent_cumulative,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// holder_id binds the return to the lease's grantee (same match-or-PermissionDenied rule as
+	// BudgetReportRequest.holder_id). Empty is lenient (back-compat).
+	HolderId      string `protobuf:"bytes,5,opt,name=holder_id,json=holderId,proto3" json:"holder_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *BudgetReturnRequest) Reset() {
@@ -521,6 +535,13 @@ func (x *BudgetReturnRequest) GetSpentCumulative() int64 {
 		return x.SpentCumulative
 	}
 	return 0
+}
+
+func (x *BudgetReturnRequest) GetHolderId() string {
+	if x != nil {
+		return x.HolderId
+	}
+	return ""
 }
 
 type BudgetStatRequest struct {
@@ -721,17 +742,19 @@ const file_wavespan_v1_budget_proto_rawDesc = "" +
 	"granted_ms\x18\x05 \x01(\x03R\tgrantedMs\x12\x15\n" +
 	"\x06ttl_ms\x18\x06 \x01(\x03R\x05ttlMs\x12\"\n" +
 	"\rself_guard_ms\x18\a \x01(\x03R\vselfGuardMs\x12-\n" +
-	"\x13max_pause_budget_ms\x18\b \x01(\x03R\x10maxPauseBudgetMs\"\x91\x01\n" +
+	"\x13max_pause_budget_ms\x18\b \x01(\x03R\x10maxPauseBudgetMs\"\xae\x01\n" +
 	"\x13BudgetReportRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x19\n" +
 	"\blease_id\x18\x03 \x01(\fR\aleaseId\x12)\n" +
-	"\x10spent_cumulative\x18\x04 \x01(\x03R\x0fspentCumulative\"\x91\x01\n" +
+	"\x10spent_cumulative\x18\x04 \x01(\x03R\x0fspentCumulative\x12\x1b\n" +
+	"\tholder_id\x18\x05 \x01(\tR\bholderId\"\xae\x01\n" +
 	"\x13BudgetReturnRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\x19\n" +
 	"\blease_id\x18\x03 \x01(\fR\aleaseId\x12)\n" +
-	"\x10spent_cumulative\x18\x04 \x01(\x03R\x0fspentCumulative\"m\n" +
+	"\x10spent_cumulative\x18\x04 \x01(\x03R\x0fspentCumulative\x12\x1b\n" +
+	"\tholder_id\x18\x05 \x01(\tR\bholderId\"m\n" +
 	"\x11BudgetStatRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x16\n" +
 	"\x06budget\x18\x02 \x01(\fR\x06budget\x12\"\n" +

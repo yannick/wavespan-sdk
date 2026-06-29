@@ -78,6 +78,10 @@ message BudgetReportRequest {
   bytes budget = 2;
   bytes lease_id = 3;
   int64 spent_cumulative = 4;
+  // holder_id binds the report to the lease's grantee. When non-empty it must match the lease's recorded
+  // holder, else the report fails with PermissionDenied (closes the Return/Report-tampering + nodeID-
+  // collision bug). Empty is lenient (back-compat): a caller that omits it is not holder-checked.
+  string holder_id = 5;
 }
 
 message BudgetReturnRequest {
@@ -85,6 +89,9 @@ message BudgetReturnRequest {
   bytes budget = 2;
   bytes lease_id = 3;
   int64 spent_cumulative = 4;
+  // holder_id binds the return to the lease's grantee (same match-or-PermissionDenied rule as
+  // BudgetReportRequest.holder_id). Empty is lenient (back-compat).
+  string holder_id = 5;
 }
 
 message BudgetStatRequest {

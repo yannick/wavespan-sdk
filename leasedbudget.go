@@ -211,7 +211,7 @@ func (lb *LeasedBudgetClient) Acquire(ctx context.Context, key BudgetKey, opts .
 		return lb.draw(ctx, key, cell.holder, amount, leaseID)
 	}
 	cell.reportFn = func(ctx context.Context, leaseID []byte, spent int64) error {
-		return lb.c.Budget().Report(ctx, key.Namespace, key.Budget, leaseID, spent)
+		return lb.c.Budget().Report(ctx, key.Namespace, key.Budget, leaseID, cell.holder, spent)
 	}
 	cell.triggerRefill = cell.requestRefill
 	b := &Budget{lb: lb, key: key, cell: cell}
@@ -283,7 +283,7 @@ func (b *Budget) Return(ctx context.Context) error {
 		if len(ch.leaseID) == 0 {
 			continue
 		}
-		if err := b.lb.c.Budget().Return(ctx, b.key.Namespace, b.key.Budget, ch.leaseID, ch.spent); err != nil && firstErr == nil {
+		if err := b.lb.c.Budget().Return(ctx, b.key.Namespace, b.key.Budget, ch.leaseID, b.cell.holder, ch.spent); err != nil && firstErr == nil {
 			firstErr = err
 		}
 	}
