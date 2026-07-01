@@ -1,11 +1,15 @@
 package wavespan
 
 import (
+	"errors"
 	"fmt"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+// errNoCores is returned when shard-aware routing is requested without any core addresses.
+var errNoCores = errors.New("shard-aware routing requires at least one core address")
 
 // Error is the SDK's error type. It names the logical operation that failed and preserves the
 // underlying gRPC status code (via [Error.Code] / [CodeOf]).

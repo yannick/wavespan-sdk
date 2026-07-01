@@ -19,27 +19,28 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	CollectionService_SAdd_FullMethodName           = "/wavespan.v1.CollectionService/SAdd"
-	CollectionService_SRem_FullMethodName           = "/wavespan.v1.CollectionService/SRem"
-	CollectionService_SIsMember_FullMethodName      = "/wavespan.v1.CollectionService/SIsMember"
-	CollectionService_SCard_FullMethodName          = "/wavespan.v1.CollectionService/SCard"
-	CollectionService_SMembers_FullMethodName       = "/wavespan.v1.CollectionService/SMembers"
-	CollectionService_HSet_FullMethodName           = "/wavespan.v1.CollectionService/HSet"
-	CollectionService_HDel_FullMethodName           = "/wavespan.v1.CollectionService/HDel"
-	CollectionService_HGet_FullMethodName           = "/wavespan.v1.CollectionService/HGet"
-	CollectionService_HLen_FullMethodName           = "/wavespan.v1.CollectionService/HLen"
-	CollectionService_HGetAll_FullMethodName        = "/wavespan.v1.CollectionService/HGetAll"
-	CollectionService_HIncrBy_FullMethodName        = "/wavespan.v1.CollectionService/HIncrBy"
-	CollectionService_HIncrByFloat_FullMethodName   = "/wavespan.v1.CollectionService/HIncrByFloat"
-	CollectionService_ZAdd_FullMethodName           = "/wavespan.v1.CollectionService/ZAdd"
-	CollectionService_ZRem_FullMethodName           = "/wavespan.v1.CollectionService/ZRem"
-	CollectionService_ZScore_FullMethodName         = "/wavespan.v1.CollectionService/ZScore"
-	CollectionService_ZCard_FullMethodName          = "/wavespan.v1.CollectionService/ZCard"
-	CollectionService_ZRange_FullMethodName         = "/wavespan.v1.CollectionService/ZRange"
-	CollectionService_BulkRemove_FullMethodName     = "/wavespan.v1.CollectionService/BulkRemove"
-	CollectionService_TierInfo_FullMethodName       = "/wavespan.v1.CollectionService/TierInfo"
-	CollectionService_AdmitLearner_FullMethodName   = "/wavespan.v1.CollectionService/AdmitLearner"
-	CollectionService_ProposeForward_FullMethodName = "/wavespan.v1.CollectionService/ProposeForward"
+	CollectionService_SAdd_FullMethodName            = "/wavespan.v1.CollectionService/SAdd"
+	CollectionService_SRem_FullMethodName            = "/wavespan.v1.CollectionService/SRem"
+	CollectionService_SIsMember_FullMethodName       = "/wavespan.v1.CollectionService/SIsMember"
+	CollectionService_SCard_FullMethodName           = "/wavespan.v1.CollectionService/SCard"
+	CollectionService_SMembers_FullMethodName        = "/wavespan.v1.CollectionService/SMembers"
+	CollectionService_HSet_FullMethodName            = "/wavespan.v1.CollectionService/HSet"
+	CollectionService_HDel_FullMethodName            = "/wavespan.v1.CollectionService/HDel"
+	CollectionService_HGet_FullMethodName            = "/wavespan.v1.CollectionService/HGet"
+	CollectionService_HLen_FullMethodName            = "/wavespan.v1.CollectionService/HLen"
+	CollectionService_HGetAll_FullMethodName         = "/wavespan.v1.CollectionService/HGetAll"
+	CollectionService_HIncrBy_FullMethodName         = "/wavespan.v1.CollectionService/HIncrBy"
+	CollectionService_HIncrByFloat_FullMethodName    = "/wavespan.v1.CollectionService/HIncrByFloat"
+	CollectionService_ZAdd_FullMethodName            = "/wavespan.v1.CollectionService/ZAdd"
+	CollectionService_ZRem_FullMethodName            = "/wavespan.v1.CollectionService/ZRem"
+	CollectionService_ZScore_FullMethodName          = "/wavespan.v1.CollectionService/ZScore"
+	CollectionService_ZCard_FullMethodName           = "/wavespan.v1.CollectionService/ZCard"
+	CollectionService_ZRange_FullMethodName          = "/wavespan.v1.CollectionService/ZRange"
+	CollectionService_BulkRemove_FullMethodName      = "/wavespan.v1.CollectionService/BulkRemove"
+	CollectionService_ListCollections_FullMethodName = "/wavespan.v1.CollectionService/ListCollections"
+	CollectionService_TierInfo_FullMethodName        = "/wavespan.v1.CollectionService/TierInfo"
+	CollectionService_AdmitLearner_FullMethodName    = "/wavespan.v1.CollectionService/AdmitLearner"
+	CollectionService_ProposeForward_FullMethodName  = "/wavespan.v1.CollectionService/ProposeForward"
 )
 
 // CollectionServiceClient is the client API for CollectionService service.
@@ -78,6 +79,9 @@ type CollectionServiceClient interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(ctx context.Context, in *BulkRemoveRequest, opts ...grpc.CallOption) (*BulkRemoveResult, error)
+	// ListCollections enumerates every collection in a namespace, returning each one's name and datatype
+	// ("set"/"hash"/"zset", or "unknown"). Gathered best-effort across data shards (design/30 §13.7).
+	ListCollections(ctx context.Context, in *ListCollectionsRequest, opts ...grpc.CallOption) (*ListCollectionsResult, error)
 	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
 	// — a read-only operator view (design/30 §12).
 	TierInfo(ctx context.Context, in *TierInfoRequest, opts ...grpc.CallOption) (*TierInfoResult, error)
@@ -280,6 +284,16 @@ func (c *collectionServiceClient) BulkRemove(ctx context.Context, in *BulkRemove
 	return out, nil
 }
 
+func (c *collectionServiceClient) ListCollections(ctx context.Context, in *ListCollectionsRequest, opts ...grpc.CallOption) (*ListCollectionsResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListCollectionsResult)
+	err := c.cc.Invoke(ctx, CollectionService_ListCollections_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *collectionServiceClient) TierInfo(ctx context.Context, in *TierInfoRequest, opts ...grpc.CallOption) (*TierInfoResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TierInfoResult)
@@ -346,6 +360,9 @@ type CollectionServiceServer interface {
 	// sorted sets) and best-effort: each collection's change is atomic on its shard, the fan-out is
 	// eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
 	BulkRemove(context.Context, *BulkRemoveRequest) (*BulkRemoveResult, error)
+	// ListCollections enumerates every collection in a namespace, returning each one's name and datatype
+	// ("set"/"hash"/"zset", or "unknown"). Gathered best-effort across data shards (design/30 §13.7).
+	ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResult, error)
 	// TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
 	// — a read-only operator view (design/30 §12).
 	TierInfo(context.Context, *TierInfoRequest) (*TierInfoResult, error)
@@ -421,6 +438,9 @@ func (UnimplementedCollectionServiceServer) ZRange(context.Context, *RangeReques
 }
 func (UnimplementedCollectionServiceServer) BulkRemove(context.Context, *BulkRemoveRequest) (*BulkRemoveResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method BulkRemove not implemented")
+}
+func (UnimplementedCollectionServiceServer) ListCollections(context.Context, *ListCollectionsRequest) (*ListCollectionsResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListCollections not implemented")
 }
 func (UnimplementedCollectionServiceServer) TierInfo(context.Context, *TierInfoRequest) (*TierInfoResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method TierInfo not implemented")
@@ -776,6 +796,24 @@ func _CollectionService_BulkRemove_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CollectionService_ListCollections_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListCollectionsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CollectionServiceServer).ListCollections(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CollectionService_ListCollections_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CollectionServiceServer).ListCollections(ctx, req.(*ListCollectionsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CollectionService_TierInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TierInfoRequest)
 	if err := dec(in); err != nil {
@@ -908,6 +946,10 @@ var CollectionService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BulkRemove",
 			Handler:    _CollectionService_BulkRemove_Handler,
+		},
+		{
+			MethodName: "ListCollections",
+			Handler:    _CollectionService_ListCollections_Handler,
 		},
 		{
 			MethodName: "TierInfo",

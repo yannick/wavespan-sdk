@@ -35,6 +35,26 @@ func (cc *CollectionsClient) idemPtr() *string {
 	return &cc.idem
 }
 
+// writeClient returns the CollectionService client a write to (namespace, collection) should use:
+// when shard-aware routing is enabled, the owning shard's leader (no server forward hop); otherwise
+// the default single-endpoint client. Reads are unaffected and always use the default client.
+func (cc *CollectionsClient) writeClient(ctx context.Context, namespace string, collection []byte) wavespanv1.CollectionServiceClient {
+	if cc.c.router != nil {
+		return cc.c.router.clientForKey(ctx, namespace, collection)
+	}
+	return cc.c.collections
+}
+
+// noteWriteErr lets the shard-aware router observe a write error (a leadership change surfaces here)
+// so it refreshes its routing table for the next op. It is a no-op when routing is disabled, and
+// returns err unchanged.
+func (cc *CollectionsClient) noteWriteErr(ctx context.Context, err error) error {
+	if cc.c.router != nil {
+		return cc.c.router.noteError(ctx, err)
+	}
+	return err
+}
+
 // FieldValue is a hash field/value pair.
 type FieldValue struct {
 	Field []byte
@@ -47,15 +67,21 @@ type ScoredMember struct {
 	Score  float64
 }
 
+// CollectionInfo is one collection's name and element type, as returned by [CollectionsClient.ListCollections].
+type CollectionInfo struct {
+	Name []byte
+	Type string // "set" | "hash" | "zset" | "unknown"
+}
+
 // --- Set ---
 
 // SAdd adds members to the set, returning the number newly added.
 func (cc *CollectionsClient) SAdd(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.SAdd(ctx, &wavespanv1.SAddRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).SAdd(ctx, &wavespanv1.SAddRequest{
 		Namespace: namespace, Collection: collection, Members: members, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("SAdd", err)
+		return 0, wrapErr("SAdd", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
@@ -63,22 +89,22 @@ func (cc *CollectionsClient) SAdd(ctx context.Context, namespace string, collect
 // SAddTTL adds members that expire after ttl, returning the number newly added.
 func (cc *CollectionsClient) SAddTTL(ctx context.Context, namespace string, collection []byte, ttl time.Duration, members ...[]byte) (uint64, error) {
 	ms := ttl.Milliseconds()
-	resp, err := cc.c.collections.SAdd(ctx, &wavespanv1.SAddRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).SAdd(ctx, &wavespanv1.SAddRequest{
 		Namespace: namespace, Collection: collection, Members: members, TtlMs: &ms, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("SAddTTL", err)
+		return 0, wrapErr("SAddTTL", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
 
 // SRem removes members from the set, returning the number removed.
 func (cc *CollectionsClient) SRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.SRem(ctx, &wavespanv1.KeysRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).SRem(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("SRem", err)
+		return 0, wrapErr("SRem", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
@@ -124,22 +150,22 @@ func (cc *CollectionsClient) HSet(ctx context.Context, namespace string, collect
 	for i, f := range fields {
 		pb[i] = &wavespanv1.FieldValue{Field: f.Field, Value: f.Value}
 	}
-	resp, err := cc.c.collections.HSet(ctx, &wavespanv1.HSetRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).HSet(ctx, &wavespanv1.HSetRequest{
 		Namespace: namespace, Collection: collection, Fields: pb, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("HSet", err)
+		return 0, wrapErr("HSet", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
 
 // HDel deletes hash fields, returning the number removed.
 func (cc *CollectionsClient) HDel(ctx context.Context, namespace string, collection []byte, fields ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.HDel(ctx, &wavespanv1.KeysRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).HDel(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: fields, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("HDel", err)
+		return 0, wrapErr("HDel", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
@@ -184,22 +210,22 @@ func (cc *CollectionsClient) HGetAll(ctx context.Context, namespace string, coll
 // HIncrBy atomically adds delta to an integer hash field and returns the new value (exact under
 // concurrency). Fails with InvalidArgument if the field's value is not an integer.
 func (cc *CollectionsClient) HIncrBy(ctx context.Context, namespace string, collection, field []byte, delta int64) (int64, error) {
-	resp, err := cc.c.collections.HIncrBy(ctx, &wavespanv1.HIncrByRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).HIncrBy(ctx, &wavespanv1.HIncrByRequest{
 		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("HIncrBy", err)
+		return 0, wrapErr("HIncrBy", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetValue(), nil
 }
 
 // HIncrByFloat atomically adds delta to a float hash field and returns the new value.
 func (cc *CollectionsClient) HIncrByFloat(ctx context.Context, namespace string, collection, field []byte, delta float64) (float64, error) {
-	resp, err := cc.c.collections.HIncrByFloat(ctx, &wavespanv1.HIncrByFloatRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).HIncrByFloat(ctx, &wavespanv1.HIncrByFloatRequest{
 		Namespace: namespace, Collection: collection, Field: field, Delta: delta, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("HIncrByFloat", err)
+		return 0, wrapErr("HIncrByFloat", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetValue(), nil
 }
@@ -212,22 +238,22 @@ func (cc *CollectionsClient) ZAdd(ctx context.Context, namespace string, collect
 	for i, m := range members {
 		pb[i] = &wavespanv1.ScoredMember{Member: m.Member, Score: m.Score}
 	}
-	resp, err := cc.c.collections.ZAdd(ctx, &wavespanv1.ZAddRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).ZAdd(ctx, &wavespanv1.ZAddRequest{
 		Namespace: namespace, Collection: collection, Members: pb, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("ZAdd", err)
+		return 0, wrapErr("ZAdd", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
 
 // ZRem removes sorted-set members, returning the number removed.
 func (cc *CollectionsClient) ZRem(ctx context.Context, namespace string, collection []byte, members ...[]byte) (uint64, error) {
-	resp, err := cc.c.collections.ZRem(ctx, &wavespanv1.KeysRequest{
+	resp, err := cc.writeClient(ctx, namespace, collection).ZRem(ctx, &wavespanv1.KeysRequest{
 		Namespace: namespace, Collection: collection, Keys: members, IdempotencyKey: cc.idemPtr(),
 	})
 	if err != nil {
-		return 0, wrapErr("ZRem", err)
+		return 0, wrapErr("ZRem", cc.noteWriteErr(ctx, err))
 	}
 	return resp.GetCount(), nil
 }
@@ -282,11 +308,17 @@ type BulkRemoveEntry struct {
 // collections is empty) every collection in the namespace. The removal is type-agnostic and
 // best-effort across shards; per-collection results are returned (design/30 §13.7).
 func (cc *CollectionsClient) BulkRemove(ctx context.Context, namespace string, collections, members [][]byte) ([]BulkRemoveEntry, error) {
-	resp, err := cc.c.collections.BulkRemove(ctx, &wavespanv1.BulkRemoveRequest{
+	// BulkRemove can span shards, so no single leader owns it all; route to the first collection's
+	// leader (or the default client) and let the server fan out cross-shard.
+	var firstColl []byte
+	if len(collections) > 0 {
+		firstColl = collections[0]
+	}
+	resp, err := cc.writeClient(ctx, namespace, firstColl).BulkRemove(ctx, &wavespanv1.BulkRemoveRequest{
 		Namespace: namespace, Collections: collections, Members: members,
 	})
 	if err != nil {
-		return nil, wrapErr("BulkRemove", err)
+		return nil, wrapErr("BulkRemove", cc.noteWriteErr(ctx, err))
 	}
 	out := make([]BulkRemoveEntry, len(resp.GetResults()))
 	for i, e := range resp.GetResults() {
@@ -342,6 +374,22 @@ func (cc *CollectionsClient) TierInfo(ctx context.Context) (TierStatus, error) {
 			ShardID: s.GetShardId(), ReplicaID: s.GetReplicaId(), LeaderReplicaID: s.GetLeaderReplicaId(),
 			HasLeader: s.GetHasLeader(), IsLeader: s.GetIsLeader(), IsData: s.GetIsData(),
 		})
+	}
+	return out, nil
+}
+
+// ListCollections lists the collections in a namespace with their element types. Pass linearizable=true
+// for a quorum read; false (the default) is a bounded-stale local read.
+func (cc *CollectionsClient) ListCollections(ctx context.Context, namespace string, linearizable bool) ([]CollectionInfo, error) {
+	resp, err := cc.c.collections.ListCollections(ctx, &wavespanv1.ListCollectionsRequest{
+		Namespace: namespace, Linearizable: linearizable,
+	})
+	if err != nil {
+		return nil, wrapErr("ListCollections", err)
+	}
+	out := make([]CollectionInfo, 0, len(resp.GetCollections()))
+	for _, ci := range resp.GetCollections() {
+		out = append(out, CollectionInfo{Name: ci.GetName(), Type: ci.GetType()})
 	}
 	return out, nil
 }

@@ -22,9 +22,6 @@ import (
 // the holder stops EARLY on a single suspend-aware monotonic clock (CLOCK_BOOTTIME) while the grantor
 // reclaims LATE on a replicated logical deadline. This is the holder surface; the Stage-1 BudgetClient is
 // the controller surface.
-//
-// This SDK has no shard router, so a refill Draw uses the shared connection and relies on the server
-// forwarding to the owning shard's leader (mirrors BudgetClient's write path).
 
 // ErrBudgetUnavailable is returned by Spend when the cached lease has no capacity to satisfy the request
 // (drained, expired, or self-fenced). It is a normal back-pressure signal — the caller serves a no-budget
@@ -184,7 +181,7 @@ type Budget struct {
 // Acquire returns a node-side cache for the (namespace, budget) pool. The pacing gate (WithRate/WithBurst)
 // and refill chunk size (WithChunk) are node-local; the lease timing (ttl/self_guard/max_pause) is echoed
 // from the server on each refill and installed on the cell, so the node never hard-codes the server's
-// clock model. The initial Draw fills the cache synchronously under the caller's ctx.
+// clock model. The first Spend (or the initial refill wired in a later step) fills the cache.
 func (lb *LeasedBudgetClient) Acquire(ctx context.Context, key BudgetKey, opts ...AcquireOption) (*Budget, error) {
 	o := acquireOptions{chunk: defaultChunkUnits}
 	for _, fn := range opts {
@@ -500,8 +497,7 @@ func (c *budgetCell) refillOnce(ctx context.Context) {
 
 // draw issues a refill BudgetGrant and returns the typed timing echo. A codes.AlreadyExists status (the
 // lease_id was settled/tombstoned, §3.7) is translated to errLeaseSettled so the caller mints a fresh id.
-// A depleted pool is a normal no_capacity result (granted 0, nil error), not an error. The shared
-// connection forwards to the owning shard's leader (this SDK has no client-side shard router).
+// A depleted pool is a normal no_capacity result (granted 0, nil error), not an error.
 func (lb *LeasedBudgetClient) draw(ctx context.Context, key BudgetKey, holder []byte, amount int64, leaseID []byte) (drawResult, error) {
 	resp, err := lb.c.budget.BudgetGrant(ctx, &wavespanv1.BudgetGrantRequest{
 		Namespace:   key.Namespace,

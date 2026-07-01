@@ -276,6 +276,9 @@ service ObservabilityService {
   // DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
   // deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
   rpc DeleteNamespace(DeleteNamespaceRequest) returns (DeleteNamespaceResponse);
+  // AdminPutGraph upserts (or, with delete=true, tombstones) a single graph node or edge from the
+  // node UI, mirroring AdminPut/AdminDelete for the graph model so editing is symmetric.
+  rpc AdminPutGraph(AdminPutGraphRequest) returns (AdminPutGraphResponse);
   // GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
   // serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
   // UI Config tab and cross-node config inspection.
@@ -400,5 +403,25 @@ message DeleteNamespaceResponse {
   bool ok = 1;
   // deleted_keys is the number of live keys tombstoned across the cluster.
   uint64 deleted_keys = 2;
+  string error = 3;
+}
+
+// AdminPutGraphRequest upserts or deletes a single graph node or edge from the node UI, mirroring
+// AdminPut/AdminDelete for the graph model. Exactly one of node/edge must be set; delete=true writes
+// a tombstone instead of an upsert. NodeRecord/EdgeRecord/Value are reused from cypher.proto.
+message AdminPutGraphRequest {
+  string graph_id = 1;
+  oneof target {
+    NodeRecord node = 2;
+    EdgeRecord edge = 3;
+  }
+  bool delete = 4;
+  string target_member_id = 5;
+}
+
+// AdminPutGraphResponse reports the outcome; version is the stamped record version on success.
+message AdminPutGraphResponse {
+  bool ok = 1;
+  Version version = 2;
   string error = 3;
 }

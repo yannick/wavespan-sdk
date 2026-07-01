@@ -284,6 +284,7 @@ const (
 	GlobalReplication_PushGlobal_FullMethodName   = "/wavespan.v1.GlobalReplication/PushGlobal"
 	GlobalReplication_RangeSummary_FullMethodName = "/wavespan.v1.GlobalReplication/RangeSummary"
 	GlobalReplication_FetchRange_FullMethodName   = "/wavespan.v1.GlobalReplication/FetchRange"
+	GlobalReplication_InspectKey_FullMethodName   = "/wavespan.v1.GlobalReplication/InspectKey"
 )
 
 // GlobalReplicationClient is the client API for GlobalReplication service.
@@ -296,6 +297,7 @@ type GlobalReplicationClient interface {
 	PushGlobal(ctx context.Context, in *PushGlobalRequest, opts ...grpc.CallOption) (*PushGlobalAck, error)
 	RangeSummary(ctx context.Context, in *RangeSummaryRequest, opts ...grpc.CallOption) (*RangeSummaryResponse, error)
 	FetchRange(ctx context.Context, in *FetchRangeRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[GlobalMutation], error)
+	InspectKey(ctx context.Context, in *InspectKeyRequest, opts ...grpc.CallOption) (*InspectKeyResponse, error)
 }
 
 type globalReplicationClient struct {
@@ -345,6 +347,16 @@ func (c *globalReplicationClient) FetchRange(ctx context.Context, in *FetchRange
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GlobalReplication_FetchRangeClient = grpc.ServerStreamingClient[GlobalMutation]
 
+func (c *globalReplicationClient) InspectKey(ctx context.Context, in *InspectKeyRequest, opts ...grpc.CallOption) (*InspectKeyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InspectKeyResponse)
+	err := c.cc.Invoke(ctx, GlobalReplication_InspectKey_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // GlobalReplicationServer is the server API for GlobalReplication service.
 // All implementations must embed UnimplementedGlobalReplicationServer
 // for forward compatibility.
@@ -355,6 +367,7 @@ type GlobalReplicationServer interface {
 	PushGlobal(context.Context, *PushGlobalRequest) (*PushGlobalAck, error)
 	RangeSummary(context.Context, *RangeSummaryRequest) (*RangeSummaryResponse, error)
 	FetchRange(*FetchRangeRequest, grpc.ServerStreamingServer[GlobalMutation]) error
+	InspectKey(context.Context, *InspectKeyRequest) (*InspectKeyResponse, error)
 	mustEmbedUnimplementedGlobalReplicationServer()
 }
 
@@ -373,6 +386,9 @@ func (UnimplementedGlobalReplicationServer) RangeSummary(context.Context, *Range
 }
 func (UnimplementedGlobalReplicationServer) FetchRange(*FetchRangeRequest, grpc.ServerStreamingServer[GlobalMutation]) error {
 	return status.Error(codes.Unimplemented, "method FetchRange not implemented")
+}
+func (UnimplementedGlobalReplicationServer) InspectKey(context.Context, *InspectKeyRequest) (*InspectKeyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method InspectKey not implemented")
 }
 func (UnimplementedGlobalReplicationServer) mustEmbedUnimplementedGlobalReplicationServer() {}
 func (UnimplementedGlobalReplicationServer) testEmbeddedByValue()                           {}
@@ -442,6 +458,24 @@ func _GlobalReplication_FetchRange_Handler(srv interface{}, stream grpc.ServerSt
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type GlobalReplication_FetchRangeServer = grpc.ServerStreamingServer[GlobalMutation]
 
+func _GlobalReplication_InspectKey_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InspectKeyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(GlobalReplicationServer).InspectKey(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: GlobalReplication_InspectKey_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(GlobalReplicationServer).InspectKey(ctx, req.(*InspectKeyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // GlobalReplication_ServiceDesc is the grpc.ServiceDesc for GlobalReplication service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -456,6 +490,10 @@ var GlobalReplication_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RangeSummary",
 			Handler:    _GlobalReplication_RangeSummary_Handler,
+		},
+		{
+			MethodName: "InspectKey",
+			Handler:    _GlobalReplication_InspectKey_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

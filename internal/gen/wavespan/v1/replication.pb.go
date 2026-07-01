@@ -1344,11 +1344,143 @@ func (x *FetchRangeRequest) GetRange() *KeyRange {
 	return nil
 }
 
+// InspectKey asks a peer cluster "which of your nodes hold this key, at what version?" for the
+// Global Data Browser (design/26). The peer runs its own within-cluster resolution and returns
+// one holder per node that has the key, tagged with the peer's cluster_id. Single hop: the peer
+// never recurses into its own peers.
+type InspectKeyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Namespace     string                 `protobuf:"bytes,1,opt,name=namespace,proto3" json:"namespace,omitempty"`
+	Key           []byte                 `protobuf:"bytes,2,opt,name=key,proto3" json:"key,omitempty"`
+	IncludeValue  bool                   `protobuf:"varint,3,opt,name=include_value,json=includeValue,proto3" json:"include_value,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InspectKeyRequest) Reset() {
+	*x = InspectKeyRequest{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectKeyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectKeyRequest) ProtoMessage() {}
+
+func (x *InspectKeyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectKeyRequest.ProtoReflect.Descriptor instead.
+func (*InspectKeyRequest) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *InspectKeyRequest) GetNamespace() string {
+	if x != nil {
+		return x.Namespace
+	}
+	return ""
+}
+
+func (x *InspectKeyRequest) GetKey() []byte {
+	if x != nil {
+		return x.Key
+	}
+	return nil
+}
+
+func (x *InspectKeyRequest) GetIncludeValue() bool {
+	if x != nil {
+		return x.IncludeValue
+	}
+	return false
+}
+
+type InspectKeyResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Holders       []*InspectHolder       `protobuf:"bytes,1,rep,name=holders,proto3" json:"holders,omitempty"`    // this cluster's holders, peer_cluster_id stamped
+	Best          *StoredRecord          `protobuf:"bytes,2,opt,name=best,proto3" json:"best,omitempty"`          // latest record this cluster holds (unset if none)
+	Complete      bool                   `protobuf:"varint,3,opt,name=complete,proto3" json:"complete,omitempty"` // every alive member of this cluster answered
+	Warnings      []string               `protobuf:"bytes,4,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *InspectKeyResponse) Reset() {
+	*x = InspectKeyResponse{}
+	mi := &file_wavespan_v1_replication_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *InspectKeyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*InspectKeyResponse) ProtoMessage() {}
+
+func (x *InspectKeyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_wavespan_v1_replication_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use InspectKeyResponse.ProtoReflect.Descriptor instead.
+func (*InspectKeyResponse) Descriptor() ([]byte, []int) {
+	return file_wavespan_v1_replication_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *InspectKeyResponse) GetHolders() []*InspectHolder {
+	if x != nil {
+		return x.Holders
+	}
+	return nil
+}
+
+func (x *InspectKeyResponse) GetBest() *StoredRecord {
+	if x != nil {
+		return x.Best
+	}
+	return nil
+}
+
+func (x *InspectKeyResponse) GetComplete() bool {
+	if x != nil {
+		return x.Complete
+	}
+	return false
+}
+
+func (x *InspectKeyResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 var File_wavespan_v1_replication_proto protoreflect.FileDescriptor
 
 const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\n" +
-	"\x1dwavespan/v1/replication.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\"\x8d\x02\n" +
+	"\x1dwavespan/v1/replication.proto\x12\vwavespan.v1\x1a\x18wavespan/v1/common.proto\x1a\x1fwavespan/v1/observability.proto\"\x8d\x02\n" +
 	"\x13StoreReplicaRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\fR\x03key\x121\n" +
@@ -1439,7 +1571,16 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\x14RangeSummaryResponse\x12.\n" +
 	"\x06hashes\x18\x01 \x03(\v2\x16.wavespan.v1.RangeHashR\x06hashes\"@\n" +
 	"\x11FetchRangeRequest\x12+\n" +
-	"\x05range\x18\x01 \x01(\v2\x15.wavespan.v1.KeyRangeR\x05range*p\n" +
+	"\x05range\x18\x01 \x01(\v2\x15.wavespan.v1.KeyRangeR\x05range\"h\n" +
+	"\x11InspectKeyRequest\x12\x1c\n" +
+	"\tnamespace\x18\x01 \x01(\tR\tnamespace\x12\x10\n" +
+	"\x03key\x18\x02 \x01(\fR\x03key\x12#\n" +
+	"\rinclude_value\x18\x03 \x01(\bR\fincludeValue\"\xb1\x01\n" +
+	"\x12InspectKeyResponse\x124\n" +
+	"\aholders\x18\x01 \x03(\v2\x1a.wavespan.v1.InspectHolderR\aholders\x12-\n" +
+	"\x04best\x18\x02 \x01(\v2\x19.wavespan.v1.StoredRecordR\x04best\x12\x1a\n" +
+	"\bcomplete\x18\x03 \x01(\bR\bcomplete\x12\x1a\n" +
+	"\bwarnings\x18\x04 \x03(\tR\bwarnings*p\n" +
 	"\fReplicaClass\x12\x1d\n" +
 	"\x19REPLICA_CLASS_UNSPECIFIED\x10\x00\x12 \n" +
 	"\x1cREPLICA_CLASS_NEARBY_DURABLE\x10\x01\x12\x1f\n" +
@@ -1449,13 +1590,15 @@ const file_wavespan_v1_replication_proto_rawDesc = "" +
 	"\fFetchReplica\x12 .wavespan.v1.FetchReplicaRequest\x1a!.wavespan.v1.FetchReplicaResponse\x12L\n" +
 	"\fSubscribeKey\x12 .wavespan.v1.SubscribeKeyRequest\x1a\x18.wavespan.v1.CacheUpdate0\x01\x12J\n" +
 	"\tScanLocal\x12\x1d.wavespan.v1.ScanLocalRequest\x1a\x1e.wavespan.v1.ScanLocalResponse\x12G\n" +
-	"\bBackfill\x12\x1c.wavespan.v1.BackfillRequest\x1a\x1d.wavespan.v1.BackfillResponse2\xff\x01\n" +
+	"\bBackfill\x12\x1c.wavespan.v1.BackfillRequest\x1a\x1d.wavespan.v1.BackfillResponse2\xce\x02\n" +
 	"\x11GlobalReplication\x12H\n" +
 	"\n" +
 	"PushGlobal\x12\x1e.wavespan.v1.PushGlobalRequest\x1a\x1a.wavespan.v1.PushGlobalAck\x12S\n" +
 	"\fRangeSummary\x12 .wavespan.v1.RangeSummaryRequest\x1a!.wavespan.v1.RangeSummaryResponse\x12K\n" +
 	"\n" +
-	"FetchRange\x12\x1e.wavespan.v1.FetchRangeRequest\x1a\x1b.wavespan.v1.GlobalMutation0\x01B\xb5\x01\n" +
+	"FetchRange\x12\x1e.wavespan.v1.FetchRangeRequest\x1a\x1b.wavespan.v1.GlobalMutation0\x01\x12M\n" +
+	"\n" +
+	"InspectKey\x12\x1e.wavespan.v1.InspectKeyRequest\x1a\x1f.wavespan.v1.InspectKeyResponseB\xb5\x01\n" +
 	"\x0fcom.wavespan.v1B\x10ReplicationProtoP\x01ZCgithub.com/yannick/wavespan-sdk/internal/gen/wavespan/v1;wavespanv1\xa2\x02\x03WXX\xaa\x02\vWavespan.V1\xca\x02\vWavespan\\V1\xe2\x02\x17Wavespan\\V1\\GPBMetadata\xea\x02\fWavespan::V1b\x06proto3"
 
 var (
@@ -1471,7 +1614,7 @@ func file_wavespan_v1_replication_proto_rawDescGZIP() []byte {
 }
 
 var file_wavespan_v1_replication_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_wavespan_v1_replication_proto_msgTypes = make([]protoimpl.MessageInfo, 23)
 var file_wavespan_v1_replication_proto_goTypes = []any{
 	(ReplicaClass)(0),            // 0: wavespan.v1.ReplicaClass
 	(*StoreReplicaRequest)(nil),  // 1: wavespan.v1.StoreReplicaRequest
@@ -1495,51 +1638,58 @@ var file_wavespan_v1_replication_proto_goTypes = []any{
 	(*RangeSummaryRequest)(nil),  // 19: wavespan.v1.RangeSummaryRequest
 	(*RangeSummaryResponse)(nil), // 20: wavespan.v1.RangeSummaryResponse
 	(*FetchRangeRequest)(nil),    // 21: wavespan.v1.FetchRangeRequest
-	(*StoredRecord)(nil),         // 22: wavespan.v1.StoredRecord
-	(*Version)(nil),              // 23: wavespan.v1.Version
-	(ConflictState)(0),           // 24: wavespan.v1.ConflictState
+	(*InspectKeyRequest)(nil),    // 22: wavespan.v1.InspectKeyRequest
+	(*InspectKeyResponse)(nil),   // 23: wavespan.v1.InspectKeyResponse
+	(*StoredRecord)(nil),         // 24: wavespan.v1.StoredRecord
+	(*Version)(nil),              // 25: wavespan.v1.Version
+	(ConflictState)(0),           // 26: wavespan.v1.ConflictState
+	(*InspectHolder)(nil),        // 27: wavespan.v1.InspectHolder
 }
 var file_wavespan_v1_replication_proto_depIdxs = []int32{
-	22, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
+	24, // 0: wavespan.v1.StoreReplicaRequest.record:type_name -> wavespan.v1.StoredRecord
 	0,  // 1: wavespan.v1.StoreReplicaRequest.replica_class:type_name -> wavespan.v1.ReplicaClass
-	23, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
-	24, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
-	23, // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
-	22, // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
+	25, // 2: wavespan.v1.StoreReplicaResponse.applied_version:type_name -> wavespan.v1.Version
+	26, // 3: wavespan.v1.StoreReplicaResponse.conflict_state:type_name -> wavespan.v1.ConflictState
+	25, // 4: wavespan.v1.FetchReplicaRequest.min_version:type_name -> wavespan.v1.Version
+	24, // 5: wavespan.v1.FetchReplicaResponse.record:type_name -> wavespan.v1.StoredRecord
 	3,  // 6: wavespan.v1.FetchReplicaResponse.subscription_offer:type_name -> wavespan.v1.SubscriptionOffer
-	23, // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
-	22, // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
-	23, // 9: wavespan.v1.ScanLocalRow.version:type_name -> wavespan.v1.Version
+	25, // 7: wavespan.v1.SubscribeKeyRequest.from_version:type_name -> wavespan.v1.Version
+	24, // 8: wavespan.v1.CacheUpdate.record:type_name -> wavespan.v1.StoredRecord
+	25, // 9: wavespan.v1.ScanLocalRow.version:type_name -> wavespan.v1.Version
 	9,  // 10: wavespan.v1.ScanLocalResponse.rows:type_name -> wavespan.v1.ScanLocalRow
-	22, // 11: wavespan.v1.BackfillResponse.records:type_name -> wavespan.v1.StoredRecord
+	24, // 11: wavespan.v1.BackfillResponse.records:type_name -> wavespan.v1.StoredRecord
 	13, // 12: wavespan.v1.GlobalMutation.id:type_name -> wavespan.v1.GlobalMutationId
-	22, // 13: wavespan.v1.GlobalMutation.record:type_name -> wavespan.v1.StoredRecord
+	24, // 13: wavespan.v1.GlobalMutation.record:type_name -> wavespan.v1.StoredRecord
 	14, // 14: wavespan.v1.PushGlobalRequest.mutations:type_name -> wavespan.v1.GlobalMutation
 	17, // 15: wavespan.v1.RangeHash.range:type_name -> wavespan.v1.KeyRange
 	17, // 16: wavespan.v1.RangeSummaryRequest.ranges:type_name -> wavespan.v1.KeyRange
 	18, // 17: wavespan.v1.RangeSummaryResponse.hashes:type_name -> wavespan.v1.RangeHash
 	17, // 18: wavespan.v1.FetchRangeRequest.range:type_name -> wavespan.v1.KeyRange
-	1,  // 19: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
-	4,  // 20: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
-	6,  // 21: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
-	8,  // 22: wavespan.v1.ReplicationService.ScanLocal:input_type -> wavespan.v1.ScanLocalRequest
-	11, // 23: wavespan.v1.ReplicationService.Backfill:input_type -> wavespan.v1.BackfillRequest
-	15, // 24: wavespan.v1.GlobalReplication.PushGlobal:input_type -> wavespan.v1.PushGlobalRequest
-	19, // 25: wavespan.v1.GlobalReplication.RangeSummary:input_type -> wavespan.v1.RangeSummaryRequest
-	21, // 26: wavespan.v1.GlobalReplication.FetchRange:input_type -> wavespan.v1.FetchRangeRequest
-	2,  // 27: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
-	5,  // 28: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
-	7,  // 29: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
-	10, // 30: wavespan.v1.ReplicationService.ScanLocal:output_type -> wavespan.v1.ScanLocalResponse
-	12, // 31: wavespan.v1.ReplicationService.Backfill:output_type -> wavespan.v1.BackfillResponse
-	16, // 32: wavespan.v1.GlobalReplication.PushGlobal:output_type -> wavespan.v1.PushGlobalAck
-	20, // 33: wavespan.v1.GlobalReplication.RangeSummary:output_type -> wavespan.v1.RangeSummaryResponse
-	14, // 34: wavespan.v1.GlobalReplication.FetchRange:output_type -> wavespan.v1.GlobalMutation
-	27, // [27:35] is the sub-list for method output_type
-	19, // [19:27] is the sub-list for method input_type
-	19, // [19:19] is the sub-list for extension type_name
-	19, // [19:19] is the sub-list for extension extendee
-	0,  // [0:19] is the sub-list for field type_name
+	27, // 19: wavespan.v1.InspectKeyResponse.holders:type_name -> wavespan.v1.InspectHolder
+	24, // 20: wavespan.v1.InspectKeyResponse.best:type_name -> wavespan.v1.StoredRecord
+	1,  // 21: wavespan.v1.ReplicationService.StoreReplica:input_type -> wavespan.v1.StoreReplicaRequest
+	4,  // 22: wavespan.v1.ReplicationService.FetchReplica:input_type -> wavespan.v1.FetchReplicaRequest
+	6,  // 23: wavespan.v1.ReplicationService.SubscribeKey:input_type -> wavespan.v1.SubscribeKeyRequest
+	8,  // 24: wavespan.v1.ReplicationService.ScanLocal:input_type -> wavespan.v1.ScanLocalRequest
+	11, // 25: wavespan.v1.ReplicationService.Backfill:input_type -> wavespan.v1.BackfillRequest
+	15, // 26: wavespan.v1.GlobalReplication.PushGlobal:input_type -> wavespan.v1.PushGlobalRequest
+	19, // 27: wavespan.v1.GlobalReplication.RangeSummary:input_type -> wavespan.v1.RangeSummaryRequest
+	21, // 28: wavespan.v1.GlobalReplication.FetchRange:input_type -> wavespan.v1.FetchRangeRequest
+	22, // 29: wavespan.v1.GlobalReplication.InspectKey:input_type -> wavespan.v1.InspectKeyRequest
+	2,  // 30: wavespan.v1.ReplicationService.StoreReplica:output_type -> wavespan.v1.StoreReplicaResponse
+	5,  // 31: wavespan.v1.ReplicationService.FetchReplica:output_type -> wavespan.v1.FetchReplicaResponse
+	7,  // 32: wavespan.v1.ReplicationService.SubscribeKey:output_type -> wavespan.v1.CacheUpdate
+	10, // 33: wavespan.v1.ReplicationService.ScanLocal:output_type -> wavespan.v1.ScanLocalResponse
+	12, // 34: wavespan.v1.ReplicationService.Backfill:output_type -> wavespan.v1.BackfillResponse
+	16, // 35: wavespan.v1.GlobalReplication.PushGlobal:output_type -> wavespan.v1.PushGlobalAck
+	20, // 36: wavespan.v1.GlobalReplication.RangeSummary:output_type -> wavespan.v1.RangeSummaryResponse
+	14, // 37: wavespan.v1.GlobalReplication.FetchRange:output_type -> wavespan.v1.GlobalMutation
+	23, // 38: wavespan.v1.GlobalReplication.InspectKey:output_type -> wavespan.v1.InspectKeyResponse
+	30, // [30:39] is the sub-list for method output_type
+	21, // [21:30] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_wavespan_v1_replication_proto_init() }
@@ -1548,6 +1698,7 @@ func file_wavespan_v1_replication_proto_init() {
 		return
 	}
 	file_wavespan_v1_common_proto_init()
+	file_wavespan_v1_observability_proto_init()
 	file_wavespan_v1_replication_proto_msgTypes[3].OneofWrappers = []any{}
 	file_wavespan_v1_replication_proto_msgTypes[4].OneofWrappers = []any{}
 	file_wavespan_v1_replication_proto_msgTypes[8].OneofWrappers = []any{}
@@ -1557,7 +1708,7 @@ func file_wavespan_v1_replication_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_wavespan_v1_replication_proto_rawDesc), len(file_wavespan_v1_replication_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   21,
+			NumMessages:   23,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

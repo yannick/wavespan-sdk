@@ -49,6 +49,27 @@ A runnable version is in [`examples/quickstart`](./examples/quickstart):
 go run ./examples/quickstart --addr localhost:7800
 ```
 
+## Command-line example (`wsctl`)
+
+[`examples/cli`](./examples/cli) is a complete, dependency-free CLI that exercises **every** SDK
+operation — it doubles as a reference for how to call each method. Run it against a node's data port:
+
+```sh
+go run ./examples/cli [global-flags] <group> <op> [args...]
+
+# examples
+go run ./examples/cli -addr=localhost:7800 kv put greeting "hello, wavespan"
+go run ./examples/cli -addr=localhost:7800 kv get greeting
+go run ./examples/cli -addr=localhost:7800 set add myset alice bob
+go run ./examples/cli -addr=localhost:7800 -lin coll ls
+go run ./examples/cli -addr=localhost:7800 graph query social "MATCH (n) RETURN n LIMIT 5"
+go run ./examples/cli -addr=localhost:7800 -json budget stat quota
+```
+
+Groups: `kv`, `set`, `hash`, `zset`, `coll` (ls/tier/bulkrm), `graph`, `vec`, `budget`, `lease`.
+Global flags cover the endpoint/namespace/auth plus per-op modifiers (`-lin`, `-limit`, `-ttl`,
+`-json`, vector/lease tuning). Human-readable output by default; `-json` emits machine-parseable JSON.
+
 ## API surface
 
 The SDK covers the **data-plane** services exposed on a node's data port (default `:7800`).
@@ -124,6 +145,9 @@ top, _ := col.ZRange(ctx, "scores", []byte("game-7"), 10, false) // ascending sc
 n, _ := col.HIncrBy(ctx, "metrics", []byte("page:home"), []byte("views"), 1)        // new int64
 r, _ := col.HIncrByFloat(ctx, "metrics", []byte("page:home"), []byte("rate"), 0.5)  // new float64
 
+// List the collections in a namespace with their element type ("set"|"hash"|"zset"):
+cols, _ := col.ListCollections(ctx, "app", false) // []CollectionInfo{Name, Type}
+
 // Bulk member removal across many collections (named list, or all when nil):
 col.BulkRemove(ctx, "app", nil, [][]byte{[]byte("user-42")}) // remove user-42 from every collection
 
@@ -137,6 +161,49 @@ status, _ := col.TierInfo(ctx)
 A mutation against a collection of the wrong datatype returns a `FailedPrecondition` error
 (`WRONGTYPE`); incrementing a non-numeric field returns `InvalidArgument`. You can point the SDK at
 **any** node — a non-leader transparently forwards writes to the owning shard's leader.
+
+### Leased budgets (distributed escrow)
+
+The LeasedBudget datatype is a pool of `int64` micro-units leased out, spent against, and returned
+under the conservation invariant `cap == available + leasedOut + spent`. There are two surfaces:
+
+**Controller** (`c.Budget()`) — define pools and manage leases from a coordinator:
+
+```go
+b := c.Budget()
+b.Define(ctx, "ai", []byte("gpt-tokens"), 1_000_000, wavespan.BudgetModeStrict, nil)
+granted, _ := b.Grant(ctx, "ai", []byte("gpt-tokens"), []byte("worker-1"), 5_000, []byte("lease-1"))
+b.Report(ctx, "ai", []byte("gpt-tokens"), []byte("lease-1"), []byte("worker-1"), 4_200) // cumulative spend
+b.Return(ctx, "ai", []byte("gpt-tokens"), []byte("lease-1"), []byte("worker-1"), 4_200) // settle & credit back
+st, _ := b.Stat(ctx, "ai", []byte("gpt-tokens"), false) // {Cap, Available, LeasedOut, Spent, …}
+```
+
+**Node-side holder** (`c.LeasedBudget()`) — a cached lease with a **zero-RPC** `Spend` fast path,
+ideal for hot request paths that must not block on the controller per call:
+
+```go
+lb := c.LeasedBudget()
+bud, _ := lb.Acquire(ctx, wavespan.BudgetKey{Namespace: "ai", Budget: []byte("gpt-tokens")},
+	wavespan.WithRate(1000), wavespan.WithChunk(500)) // optional node-side pacing
+if err := bud.Spend(42); err != nil {                 // local; no RPC on the hot path
+	// errors.Is(err, wavespan.ErrBudgetUnavailable) | wavespan.ErrPacingThrottled
+}
+_ = bud.Return(ctx) // graceful settle; the Budget is unusable afterwards
+```
+
+### Shard-aware write routing (advanced)
+
+By default a collection/budget write may take one server-side forward hop to the owning shard's
+leader. Opt into direct-to-leader routing by giving the SDK the cluster's core addresses:
+
+```go
+opts := wavespan.Options{Endpoint: "node-1:7800"}.
+	WithShardAwareRouting([]string{"node-1:7800", "node-2:7800", "node-3:7800"}, 4) // cores, data-shard count
+c, _ := wavespan.Dial(opts)
+```
+
+Reads and non-collection APIs are unaffected; `wavespan.ShardForKey(ns, coll, dataShards)` exposes the
+placement hash if you want to pre-compute ownership.
 
 ## Honest consistency metadata
 
@@ -167,12 +234,15 @@ set the connection uses TLS credentials; otherwise it uses insecure (plaintext) 
 
 ## Regenerating the stubs
 
-The `.proto` files in [`../../proto`](../../proto) are the single source of truth. After changing
-them (and running `buf generate` for the server), refresh the SDK's vendored copy from the repo root:
+The `.proto` contract under [`proto/`](./proto) is vendored from the WaveSpan server (the single
+source of truth) and drives `internal/gen`. After updating the vendored `.proto` files, regenerate
+from the repo root:
 
 ```sh
-buf generate --template sdk/go/buf.gen.yaml     # or: make sdk-proto / just sdk-proto
+buf generate     # writes internal/gen (managed mode rewrites go_package to this module)
 ```
+
+Requires `buf` plus `protoc-gen-go` and `protoc-gen-go-grpc` on `PATH`.
 
 ## Other languages
 

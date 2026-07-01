@@ -40,6 +40,10 @@ service CollectionService {
   // eventually-consistent across shards, and per-collection results are returned (design/30 §13.7).
   rpc BulkRemove(BulkRemoveRequest) returns (BulkRemoveResult);
 
+  // ListCollections enumerates every collection in a namespace, returning each one's name and datatype
+  // ("set"/"hash"/"zset", or "unknown"). Gathered best-effort across data shards (design/30 §13.7).
+  rpc ListCollections(ListCollectionsRequest) returns (ListCollectionsResult);
+
   // TierInfo reports this node's consensus-tier placement, active tunables, and per-shard leader status
   // — a read-only operator view (design/30 §12).
   rpc TierInfo(TierInfoRequest) returns (TierInfoResult);
@@ -122,6 +126,22 @@ message BulkRemoveEntry {
   bytes collection = 1;
   uint64 removed = 2;
   string error = 3; // empty = success
+}
+
+message ListCollectionsRequest {
+  string namespace = 1;
+  bool linearizable = 2;
+}
+
+// CollectionInfo is a collection's name and datatype.
+message CollectionInfo {
+  bytes name = 1;
+  string type = 2; // "set" | "hash" | "zset" | "unknown"
+}
+
+message ListCollectionsResult {
+  ResponseMeta meta = 1;
+  repeated CollectionInfo collections = 2;
 }
 
 message Int64Result {

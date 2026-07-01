@@ -1,0 +1,223 @@
+syntax = "proto3";
+
+package wavespan.v1;
+
+import "wavespan/v1/common.proto";
+
+// BackupService coordinates and executes consistent cluster backups to an object store
+// (design/backup phase 3). Admin-facing RPCs (BeginBackup/BackupStatus/ListBackups/DeleteBackup)
+// are exposed on the Connect admin port; the node-internal PrepareBackup/ExportBackup RPCs are
+// fanned out by the coordinator to each node over the gRPC data port. Every result carries
+// ResponseMeta. This phase (3a) covers full backup only.
+service BackupService {
+  // BeginBackup records a durable BackupIntent, picks a cluster HLC frontier, and drives the
+  // phased backup (assign/prepare/export/commit), returning the allocated backup id.
+  rpc BeginBackup(BeginBackupRequest) returns (BeginBackupResult);
+  // BackupStatus reports a backup's current state (status, phase, per-node progress, gaps).
+  rpc BackupStatus(BackupStatusRequest) returns (BackupState);
+  // ListBackups lists known backups from the meta-shard catalog.
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResult);
+  // DeleteBackup removes a backup's catalog intent and its objects, chain-aware (force cascades).
+  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResult);
+  // ListDestinations reports the node's configured backup destinations (default + named) for the admin
+  // UI. It returns only non-secret descriptor fields — never any credential.
+  rpc ListDestinations(ListDestinationsRequest) returns (ListDestinationsResult);
+}
+
+// BackupNodeService carries the node-internal backup RPCs. It is registered on the gRPC DATA port only
+// (inter-node, mTLS) and is NOT mounted on the admin Connect surface — the coordinator fans these out to
+// each node; clients/operators never call them. Splitting them off BackupService keeps the node-internal
+// surface off the admin API (design/backup phase 3c Task 0).
+service BackupNodeService {
+  // PrepareBackup (node-internal) seals the node's view at the frontier and reports held ranges.
+  rpc PrepareBackup(PrepareBackupRequest) returns (PrepareBackupResult);
+  // ExportBackup (node-internal) exports this node's assignment to the request-supplied object store.
+  rpc ExportBackup(ExportBackupRequest) returns (ExportBackupResult);
+}
+
+// BackupStatus is the lifecycle state of a backup.
+enum BackupStatus {
+  BACKUP_STATUS_UNSPECIFIED = 0;
+  BACKUP_RUNNING = 1;
+  BACKUP_COMPLETE = 2;
+  BACKUP_PARTIAL = 3; // some ranges had no live holder; gaps enumerated
+  BACKUP_FAILED = 4;
+}
+
+// BackupPhase is the coordinator's current phase.
+enum BackupPhase {
+  BACKUP_PHASE_UNSPECIFIED = 0;
+  BACKUP_PHASE_ASSIGN = 1;
+  BACKUP_PHASE_PREPARE = 2;
+  BACKUP_PHASE_EXPORT = 3;
+  BACKUP_PHASE_COMMIT = 4;
+}
+
+// BackupPlane selects the logical and/or physical export plane.
+enum BackupPlane {
+  BACKUP_PLANE_UNSPECIFIED = 0;
+  BACKUP_PLANE_LOGICAL = 1;
+  BACKUP_PLANE_PHYSICAL = 2;
+}
+
+// CredentialRef references a credential held outside the request (e.g. a k8s secret name / env ref),
+// resolved server-side. A secret REFERENCE is never persisted beyond the descriptor. The inline
+// access_key/secret_key are an explicit-override escape hatch: they travel ONLY over the authenticated
+// mTLS data port for a single run and are NEVER persisted (the intent/manifest store the descriptor +
+// the reference, never the raw secret) or logged.
+message CredentialRef {
+  string secret_name = 1;
+  string access_key = 2;
+  string secret_key = 3;
+}
+
+// Destination describes an object-store target. An empty destination uses the node's configured
+// default store.
+message Destination {
+  string name = 1;
+  string bucket = 2;
+  string prefix = 3;
+  string region = 4;
+  string endpoint = 5;
+  bool use_ssl = 6;
+  bool use_path_style = 7;
+  CredentialRef credential = 8;
+}
+
+// Selection narrows a backup to a subset of data (empty = everything).
+message Selection {
+  repeated string namespaces = 1;
+  repeated string graphs = 2;
+  repeated string vector_collections = 3;
+}
+
+// BackupSpec is the caller's backup request.
+message BackupSpec {
+  Selection selection = 1;
+  repeated BackupPlane planes = 2;
+  string parent = 3; // base backup id for an incremental (Phase 3b)
+  Destination destination = 4;
+}
+
+// NodeProgress is one node's export progress.
+message NodeProgress {
+  string member_id = 1;
+  BackupPhase phase = 2;
+  int64 objects = 3;
+  int64 bytes = 4;
+  bool done = 5;
+}
+
+// BackupState is a backup's full status snapshot.
+message BackupState {
+  string backup_id = 1;
+  BackupStatus status = 2;
+  BackupPhase phase = 3;
+  repeated NodeProgress per_node = 4;
+  double overall_pct = 5;
+  repeated string gaps = 6;
+  int64 started_ms = 7;
+  int64 finished_ms = 8;
+  string parent = 9;
+  Destination destination = 10;
+  ResponseMeta meta = 11;
+}
+
+// BackupSummary is a compact catalog entry for ListBackups. The destination carries the non-secret
+// descriptor only (bucket/prefix/region/endpoint + optional credential *reference* name) — never raw
+// access/secret keys, which are never persisted.
+message BackupSummary {
+  string backup_id = 1;
+  BackupStatus status = 2;
+  int64 started_ms = 3;
+  int64 finished_ms = 4;
+  string parent = 5; // set → this is an incremental (base backup id); empty → full
+  repeated BackupPlane planes = 6;
+  int64 size_bytes = 7; // aggregate exported bytes across all nodes
+  Destination destination = 8; // descriptor only — no raw credentials
+  int64 retain_until_ms = 9;
+  bool partial = 10; // true when status == PARTIAL (coverage gaps present)
+  repeated string gaps = 11;
+}
+
+message BeginBackupRequest {
+  BackupSpec spec = 1;
+}
+message BeginBackupResult {
+  string backup_id = 1;
+  ResponseMeta meta = 2;
+}
+
+message BackupStatusRequest {
+  string backup_id = 1;
+}
+
+message ListBackupsRequest {}
+message ListBackupsResult {
+  repeated BackupSummary backups = 1;
+  ResponseMeta meta = 2;
+}
+
+message DeleteBackupRequest {
+  string backup_id = 1;
+  bool force = 2; // cascade-delete dependent incremental children (else a live child refuses the delete)
+}
+message DeleteBackupResult {
+  bool deleted = 1;
+  ResponseMeta meta = 2;
+}
+
+// DestinationInfo is a configured backup destination's NON-SECRET descriptor for the admin UI. It has NO
+// credential field by design — it is structurally impossible to leak a key through this message.
+message DestinationInfo {
+  string name = 1; // set for a named destination; empty for the default
+  string bucket = 2;
+  string prefix = 3;
+  string region = 4;
+  string endpoint = 5;
+  bool use_ssl = 6;
+  bool use_path_style = 7;
+}
+
+message ListDestinationsRequest {}
+message ListDestinationsResult {
+  DestinationInfo default_destination = 1;
+  bool default_is_fs = 2; // the default has no bucket → local filesystem fallback (dev)
+  repeated DestinationInfo named = 3;
+  bool allow_inline_creds = 4; // whether ad-hoc explicit destinations may carry inline credentials
+  ResponseMeta meta = 5;
+}
+
+// PrepareBackupRequest asks a node to seal its view at frontier_t.
+message PrepareBackupRequest {
+  string backup_id = 1;
+  int64 frontier_t = 2;
+}
+message PrepareBackupResult {
+  uint64 global_seq = 1;
+  repeated string held_ranges = 2;
+  ResponseMeta meta = 3;
+}
+
+// ExportBackupRequest asks a node to export its assignment under key_prefix.
+message ExportBackupRequest {
+  string backup_id = 1;
+  int64 frontier_t = 2;
+  Selection assignment = 3;
+  repeated BackupPlane planes = 4;
+  string key_prefix = 5;
+  // parent_backup_id, when set, makes the physical plane an incremental: the node resolves its OWN parent
+  // CheckpointManifest (from the parent backup's per-node physical sub-manifest for this member) and diffs.
+  string parent_backup_id = 6;
+  // destination, when set, is the object store this node exports to (alt destination); the node resolves
+  // it (named/default from its env, secret-ref from its env, inline creds from this request). Empty = the
+  // node's configured default destination.
+  Destination destination = 7;
+}
+message ExportBackupResult {
+  int64 objects = 1;
+  int64 bytes = 2;
+  string sub_manifest_key = 3;
+  ResponseMeta meta = 4;
+  string storage_uuid = 5; // the node's stable storage identity (for 3c physical restore topology)
+}

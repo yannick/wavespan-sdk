@@ -29,6 +29,7 @@ const (
 	ObservabilityService_AdminPut_FullMethodName          = "/wavespan.v1.ObservabilityService/AdminPut"
 	ObservabilityService_AdminDelete_FullMethodName       = "/wavespan.v1.ObservabilityService/AdminDelete"
 	ObservabilityService_DeleteNamespace_FullMethodName   = "/wavespan.v1.ObservabilityService/DeleteNamespace"
+	ObservabilityService_AdminPutGraph_FullMethodName     = "/wavespan.v1.ObservabilityService/AdminPutGraph"
 	ObservabilityService_GetNodeConfig_FullMethodName     = "/wavespan.v1.ObservabilityService/GetNodeConfig"
 	ObservabilityService_AdminSetTunable_FullMethodName   = "/wavespan.v1.ObservabilityService/AdminSetTunable"
 )
@@ -60,6 +61,9 @@ type ObservabilityServiceClient interface {
 	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
 	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
 	DeleteNamespace(ctx context.Context, in *DeleteNamespaceRequest, opts ...grpc.CallOption) (*DeleteNamespaceResponse, error)
+	// AdminPutGraph upserts (or, with delete=true, tombstones) a single graph node or edge from the
+	// node UI, mirroring AdminPut/AdminDelete for the graph model so editing is symmetric.
+	AdminPutGraph(ctx context.Context, in *AdminPutGraphRequest, opts ...grpc.CallOption) (*AdminPutGraphResponse, error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -204,6 +208,16 @@ func (c *observabilityServiceClient) DeleteNamespace(ctx context.Context, in *De
 	return out, nil
 }
 
+func (c *observabilityServiceClient) AdminPutGraph(ctx context.Context, in *AdminPutGraphRequest, opts ...grpc.CallOption) (*AdminPutGraphResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminPutGraphResponse)
+	err := c.cc.Invoke(ctx, ObservabilityService_AdminPutGraph_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *observabilityServiceClient) GetNodeConfig(ctx context.Context, in *GetNodeConfigRequest, opts ...grpc.CallOption) (*NodeConfig, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(NodeConfig)
@@ -251,6 +265,9 @@ type ObservabilityServiceServer interface {
 	// DeleteNamespace tombstones every live key in a namespace cluster-wide (fan-out scan + coordinated
 	// deletes). The namespace may still appear in the gossiped list afterwards until summaries age out.
 	DeleteNamespace(context.Context, *DeleteNamespaceRequest) (*DeleteNamespaceResponse, error)
+	// AdminPutGraph upserts (or, with delete=true, tombstones) a single graph node or edge from the
+	// node UI, mirroring AdminPut/AdminDelete for the graph model so editing is symmetric.
+	AdminPutGraph(context.Context, *AdminPutGraphRequest) (*AdminPutGraphResponse, error)
 	// GetNodeConfig returns the effective tunable config of a node (empty target_member_id = the node
 	// serving this request; otherwise forwarded to that member's data-port ConfigService). Powers the
 	// UI Config tab and cross-node config inspection.
@@ -297,6 +314,9 @@ func (UnimplementedObservabilityServiceServer) AdminDelete(context.Context, *Adm
 }
 func (UnimplementedObservabilityServiceServer) DeleteNamespace(context.Context, *DeleteNamespaceRequest) (*DeleteNamespaceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteNamespace not implemented")
+}
+func (UnimplementedObservabilityServiceServer) AdminPutGraph(context.Context, *AdminPutGraphRequest) (*AdminPutGraphResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AdminPutGraph not implemented")
 }
 func (UnimplementedObservabilityServiceServer) GetNodeConfig(context.Context, *GetNodeConfigRequest) (*NodeConfig, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetNodeConfig not implemented")
@@ -484,6 +504,24 @@ func _ObservabilityService_DeleteNamespace_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ObservabilityService_AdminPutGraph_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminPutGraphRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ObservabilityServiceServer).AdminPutGraph(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ObservabilityService_AdminPutGraph_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ObservabilityServiceServer).AdminPutGraph(ctx, req.(*AdminPutGraphRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ObservabilityService_GetNodeConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetNodeConfigRequest)
 	if err := dec(in); err != nil {
@@ -554,6 +592,10 @@ var ObservabilityService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteNamespace",
 			Handler:    _ObservabilityService_DeleteNamespace_Handler,
+		},
+		{
+			MethodName: "AdminPutGraph",
+			Handler:    _ObservabilityService_AdminPutGraph_Handler,
 		},
 		{
 			MethodName: "GetNodeConfig",

@@ -8,8 +8,6 @@ import (
 
 	wavespanv1 "github.com/yannick/wavespan-sdk/internal/gen/wavespan/v1"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -46,6 +44,28 @@ type Options struct {
 	// interceptors must migrate. For full control over the connection (including stream
 	// interceptors), use DialOptions instead.
 	Interceptors []grpc.UnaryClientInterceptor
+
+	// ShardAwareCores / ShardAwareDataShards opt into shard-aware collection-write routing (off by
+	// default). When ShardAwareCores is non-empty, the Collections() client routes each write straight
+	// to the owning data shard's current leader (no per-op server forward hop), discovering leaders via
+	// TierInfo. ShardAwareCores is the ordered list of core data-port addresses (index i = replicaId
+	// i+1, matching WAVESPAN_COLLECTIONS_VOTERS order); ShardAwareDataShards is the hash directory
+	// width N (the number of data shards, server default 4). Set both. Reads and non-collection APIs
+	// are unaffected; the default single-endpoint path is unchanged. Prefer the [WithShardAwareRouting]
+	// helper over setting these directly.
+	ShardAwareCores      []string
+	ShardAwareDataShards int
+}
+
+// WithShardAwareRouting sets opts to route collection writes directly to each shard's current leader,
+// eliminating the per-op server forward hop. cores is the ordered list of core data-port addresses
+// (index i = replicaId i+1, in WAVESPAN_COLLECTIONS_VOTERS order); dataShards is the hash directory
+// width N (server default 4). This is opt-in; without it the SDK uses the single-endpoint path
+// unchanged. Returns opts for chaining.
+func (o Options) WithShardAwareRouting(cores []string, dataShards int) Options {
+	o.ShardAwareCores = cores
+	o.ShardAwareDataShards = dataShards
+	return o
 }
 
 // Client is a connection to a WaveSpan cluster. It is safe for concurrent use and should be reused;
@@ -59,6 +79,9 @@ type Client struct {
 	cypher      wavespanv1.CypherClient
 	collections wavespanv1.CollectionServiceClient
 	budget      wavespanv1.BudgetServiceClient
+
+	// router is non-nil only when shard-aware collection-write routing is enabled (Options.ShardAwareCores).
+	router *shardRouter
 }
 
 // Dial constructs a [Client] from Options. With grpc.NewClient the connection is established lazily,
@@ -69,43 +92,25 @@ func Dial(opts Options) (*Client, error) {
 	if opts.Endpoint != "" {
 		endpoints = append([]string{opts.Endpoint}, endpoints...)
 	}
+	// Shard-aware routing supplies the cluster's core addresses; when no explicit Endpoint/Endpoints
+	// are given, the first core also serves as the default (non-routed) endpoint, so callers can dial
+	// with cores alone.
+	if len(endpoints) == 0 && len(opts.ShardAwareCores) > 0 {
+		endpoints = opts.ShardAwareCores
+	}
 	if len(endpoints) == 0 {
-		return nil, fmt.Errorf("wavespan: Dial requires Options.Endpoint or Options.Endpoints")
+		return nil, fmt.Errorf("wavespan: Dial requires Options.Endpoint, Options.Endpoints, or Options.ShardAwareCores")
 	}
 	target := normalizeTarget(endpoints[0])
 
-	ua := opts.UserAgent
-	if ua == "" {
-		ua = "wavespan-go"
-	}
-
-	dialOpts := make([]grpc.DialOption, 0, 4+len(opts.DialOptions))
-	if opts.TLS != nil {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(credentials.NewTLS(opts.TLS)))
-	} else {
-		dialOpts = append(dialOpts, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	}
-	// The SDK's own metadata interceptor (auth bearer token + user-agent) runs first, then any
-	// caller-supplied unary interceptors, chained in order.
-	unary := append([]grpc.UnaryClientInterceptor{metadataInterceptor(opts.Token, ua)}, opts.Interceptors...)
-	dialOpts = append(dialOpts, grpc.WithChainUnaryInterceptor(unary...))
-	dialOpts = append(dialOpts, grpc.WithChainStreamInterceptor(metadataStreamInterceptor(opts.Token, ua)))
-	dialOpts = append(dialOpts, opts.DialOptions...)
-
-	// Use the passthrough resolver for a plain host:port so grpc dials the address via the OS
-	// resolver (correct IPv4/IPv6 happy-eyeballs for "localhost") instead of the dns resolver that
-	// grpc.NewClient defaults to — the dns resolver can stall indefinitely on localhost's dual-stack
-	// records. A target the caller gave with its own scheme (dns:///, unix:, …) is left untouched.
-	dialTarget := target
-	if !strings.Contains(dialTarget, "://") {
-		dialTarget = "passthrough:///" + dialTarget
-	}
-	conn, err := grpc.NewClient(dialTarget, dialOpts...)
+	// dialOptionsFor builds the SDK's transport posture (credentials + auth/user-agent interceptors +
+	// caller dial options); the shard-aware router reuses it for its per-core conns.
+	conn, err := grpc.NewClient(dialTargetFor(target), dialOptionsFor(opts)...)
 	if err != nil {
 		return nil, fmt.Errorf("wavespan: Dial: %w", err)
 	}
 
-	return &Client{
+	c := &Client{
 		target:      target,
 		conn:        conn,
 		kv:          wavespanv1.NewKvServiceClient(conn),
@@ -113,11 +118,38 @@ func Dial(opts Options) (*Client, error) {
 		cypher:      wavespanv1.NewCypherClient(conn),
 		collections: wavespanv1.NewCollectionServiceClient(conn),
 		budget:      wavespanv1.NewBudgetServiceClient(conn),
-	}, nil
+	}
+
+	if len(opts.ShardAwareCores) > 0 {
+		router, rerr := newShardRouter(opts.ShardAwareCores, opts.ShardAwareDataShards, dialOptionsFor(opts))
+		if rerr != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("wavespan: Dial: shard-aware routing: %w", rerr)
+		}
+		c.router = router
+	}
+
+	return c, nil
 }
 
-// Close closes the underlying *grpc.ClientConn. The Client must not be used after Close.
+// dialTargetFor wraps a plain host:port in the passthrough resolver so grpc dials it via the OS
+// resolver (correct IPv4/IPv6 happy-eyeballs for "localhost") instead of grpc.NewClient's default dns
+// resolver, which can stall on localhost's dual-stack records. A target with its own scheme
+// (dns:///, unix:, …) is left untouched. It also strips http(s):// via normalizeTarget.
+func dialTargetFor(addr string) string {
+	target := normalizeTarget(addr)
+	if !strings.Contains(target, "://") {
+		target = "passthrough:///" + target
+	}
+	return target
+}
+
+// Close closes the underlying *grpc.ClientConn (and the per-core conns of the shard-aware router, if
+// enabled). The Client must not be used after Close.
 func (c *Client) Close() error {
+	if c.router != nil {
+		c.router.close()
+	}
 	if c.conn != nil {
 		return c.conn.Close()
 	}

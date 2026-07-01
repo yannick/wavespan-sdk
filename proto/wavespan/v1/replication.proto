@@ -3,6 +3,7 @@ syntax = "proto3";
 package wavespan.v1;
 
 import "wavespan/v1/common.proto";
+import "wavespan/v1/observability.proto";  // for InspectHolder
 
 // ReplicaClass distinguishes durable replicas (counted for write durability) from disposable
 // dynamic-cache copies (design/05 replica types).
@@ -163,10 +164,27 @@ message FetchRangeRequest {
   KeyRange range = 1;
 }
 
+// InspectKey asks a peer cluster "which of your nodes hold this key, at what version?" for the
+// Global Data Browser (design/26). The peer runs its own within-cluster resolution and returns
+// one holder per node that has the key, tagged with the peer's cluster_id. Single hop: the peer
+// never recurses into its own peers.
+message InspectKeyRequest {
+  string namespace = 1;
+  bytes key = 2;
+  bool include_value = 3;
+}
+message InspectKeyResponse {
+  repeated InspectHolder holders = 1;   // this cluster's holders, peer_cluster_id stamped
+  StoredRecord best = 2;                // latest record this cluster holds (unset if none)
+  bool complete = 3;                    // every alive member of this cluster answered
+  repeated string warnings = 4;
+}
+
 // GlobalReplication ships local mutations to peer clusters asynchronously and reconciles via
 // anti-entropy (design/06). No cross-cluster consensus on the hot path.
 service GlobalReplication {
   rpc PushGlobal(PushGlobalRequest) returns (PushGlobalAck);
   rpc RangeSummary(RangeSummaryRequest) returns (RangeSummaryResponse);
   rpc FetchRange(FetchRangeRequest) returns (stream GlobalMutation);
+  rpc InspectKey(InspectKeyRequest) returns (InspectKeyResponse);
 }
