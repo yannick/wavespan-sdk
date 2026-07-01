@@ -66,9 +66,10 @@ go run ./examples/cli -addr=localhost:7800 graph query social "MATCH (n) RETURN 
 go run ./examples/cli -addr=localhost:7800 -json budget stat quota
 ```
 
-Groups: `kv`, `set`, `hash`, `zset`, `coll` (ls/tier/bulkrm), `graph`, `vec`, `budget`, `lease`.
-Global flags cover the endpoint/namespace/auth plus per-op modifiers (`-lin`, `-limit`, `-ttl`,
-`-json`, vector/lease tuning). Human-readable output by default; `-json` emits machine-parseable JSON.
+Groups: `kv`, `set`, `hash`, `zset`, `coll` (ls/tier/bulkrm), `graph`, `vec`, `budget`, `lease`,
+`backup` (begin/status/list/delete/destinations). Global flags cover the endpoint/namespace/auth plus
+per-op modifiers (`-lin`, `-limit`, `-ttl`, `-json`, vector/lease tuning). Human-readable output by
+default; `-json` emits machine-parseable JSON.
 
 ## API surface
 
@@ -164,32 +165,67 @@ A mutation against a collection of the wrong datatype returns a `FailedPrecondit
 
 ### Leased budgets (distributed escrow)
 
-The LeasedBudget datatype is a pool of `int64` micro-units leased out, spent against, and returned
-under the conservation invariant `cap == available + leasedOut + spent`. There are two surfaces:
+A **leased budget** is a pool of `int64` micro-units that clients lease out, spend against, and return —
+a distributed rate/quota primitive for things like API-token or spend caps shared across many workers.
+Every mutation is linearizable through the owning shard's leader and preserves the conservation
+invariant:
 
-**Controller** (`c.Budget()`) — define pools and manage leases from a coordinator:
+```
+cap == available + leasedOut + spent
+```
+
+In `BudgetModeStrict` (the Stage-1 mode) that invariant is enforced on every operation, so a budget can
+never be over-spent even under concurrency, node failure, or retries. There are two surfaces:
+
+**Controller** (`c.Budget()`) — define pools and manage leases (typically from a coordinator/service):
 
 ```go
 b := c.Budget()
+
+// Define a pool (nil opts = non-paced, non-expiring). Defining an existing pool is FailedPrecondition.
 b.Define(ctx, "ai", []byte("gpt-tokens"), 1_000_000, wavespan.BudgetModeStrict, nil)
+
+// Lease units to a holder under a caller-chosen lease id. Grant saturates: it returns the units
+// actually granted (0 with nil error when the pool is empty), never more than available.
 granted, _ := b.Grant(ctx, "ai", []byte("gpt-tokens"), []byte("worker-1"), 5_000, []byte("lease-1"))
+
 b.Report(ctx, "ai", []byte("gpt-tokens"), []byte("lease-1"), []byte("worker-1"), 4_200) // cumulative spend
-b.Return(ctx, "ai", []byte("gpt-tokens"), []byte("lease-1"), []byte("worker-1"), 4_200) // settle & credit back
-st, _ := b.Stat(ctx, "ai", []byte("gpt-tokens"), false) // {Cap, Available, LeasedOut, Spent, …}
+b.Return(ctx, "ai", []byte("gpt-tokens"), []byte("lease-1"), []byte("worker-1"), 4_200) // settle; credit unused back
+
+st, _ := b.Stat(ctx, "ai", []byte("gpt-tokens"), false) // BudgetStat{Cap, Available, LeasedOut, Spent, SpentReported, Epoch}
+
+// Reconcile against an external source of truth (e.g. a provider's Σ-acked usage), recovering units
+// stranded by forced lease expiries; returns the units recovered.
+recovered, _ := b.Reconcile(ctx, "ai", []byte("gpt-tokens"), 4_200)
 ```
 
-**Node-side holder** (`c.LeasedBudget()`) — a cached lease with a **zero-RPC** `Spend` fast path,
-ideal for hot request paths that must not block on the controller per call:
+`Report`/`Return` take **cumulative** spend for the lease (not deltas), so retries are idempotent.
+`Stat.SpentReported` is the spend actually attested by holders (≤ `Spent`); the gap is the maximum
+recoverable stranding. Use `WithIdempotencyKey` on the controller for exactly-once `Define`.
+
+**Node-side holder** (`c.LeasedBudget()`) — a cached lease with a **zero-RPC `Spend` fast path**, for
+hot request paths that must not block on the controller per call. It acquires a chunk of units up front
+(and refills in the background), optionally paced by a local token bucket:
 
 ```go
 lb := c.LeasedBudget()
 bud, _ := lb.Acquire(ctx, wavespan.BudgetKey{Namespace: "ai", Budget: []byte("gpt-tokens")},
-	wavespan.WithRate(1000), wavespan.WithChunk(500)) // optional node-side pacing
-if err := bud.Spend(42); err != nil {                 // local; no RPC on the hot path
-	// errors.Is(err, wavespan.ErrBudgetUnavailable) | wavespan.ErrPacingThrottled
+	wavespan.WithChunk(500),   // draw 500 units per refill
+	wavespan.WithRate(1000),   // optional: local pacing at 1000 units/sec
+	wavespan.WithBurst(2000))  // optional: token-bucket ceiling
+
+switch err := bud.Spend(42); {                       // synchronous, no RPC on the hot path
+case err == nil:                                     // charged
+case errors.Is(err, wavespan.ErrBudgetUnavailable):  // cached lease exhausted; back off / re-check
+case errors.Is(err, wavespan.ErrPacingThrottled):    // local rate limit hit; retry after tokens accrue
 }
-_ = bud.Return(ctx) // graceful settle; the Budget is unusable afterwards
+fmt.Println(bud.Remaining())  // hint: cached units still spendable without an RPC
+_ = bud.Return(ctx)           // graceful settle (credits unspent units back); Budget unusable afterwards
 ```
+
+Use the **controller** when you hand leases to remote workers or need exact accounting/reporting; use
+the **holder** when one process makes many small charges and per-call controller round-trips would
+dominate latency.
 
 ### Shard-aware write routing (advanced)
 
@@ -204,6 +240,50 @@ c, _ := wavespan.Dial(opts)
 
 Reads and non-collection APIs are unaffected; `wavespan.ShardForKey(ns, coll, dataShards)` exposes the
 placement hash if you want to pre-compute ownership.
+
+### Backups (cluster snapshots to object storage)
+
+`c.Backup()` drives consistent, point-in-time cluster backups to an object store. The node serving the
+call coordinates the backup at a cluster-wide HLC frontier and fans the export out to every node; the
+call returns as soon as the backup is admitted, so you poll for completion.
+
+```go
+bk := c.Backup()
+
+// Back up everything to the node's default destination (nil spec). Returns a backup id immediately;
+// the backup continues server-side.
+id, _ := bk.Begin(ctx, nil)
+
+// Or scope the backup and pick planes / destination:
+id, _ = bk.Begin(ctx, &wavespan.BackupSpec{
+	Selection:   &wavespan.Selection{Namespaces: []string{"users", "billing"}},
+	Planes:      []wavespan.BackupPlane{wavespan.BackupPlaneLogical},   // and/or BackupPlanePhysical
+	Destination: &wavespan.Destination{Bucket: "backups", Prefix: "prod/", Region: "eu-west-1"},
+})
+
+// Poll status → per-node progress, percent, and coverage gaps.
+st, _ := bk.Status(ctx, id)
+if st.GetStatus() == wavespan.BackupComplete {
+	fmt.Printf("done: %.0f%%, %d nodes\n", st.GetOverallPct(), len(st.GetPerNode()))
+}
+
+// Catalog + lifecycle.
+list, _ := bk.List(ctx) // []*BackupSummary
+for _, s := range list {
+	fmt.Println(s.GetBackupId(), s.GetStatus(), s.GetSizeBytes())
+}
+bk.Delete(ctx, id, false) // force=true cascades to dependent incremental children
+```
+
+Status is a `BackupStatusCode`: compare against `wavespan.BackupRunning`, `BackupComplete`,
+`BackupPartial` (some ranges had no live holder — see `st.GetGaps()`), or `BackupFailed`. Backups go to
+the node's configured default destination unless a `Destination` is given; with no bucket the default is
+a local filesystem store (dev). Credentials in an ad-hoc `Destination` should use
+`CredentialRef{SecretName: …}` (a server-resolved reference) rather than inline keys.
+
+> Backup requires the server's backup coordinator to be enabled (it registers `BackupService` once the
+> collections tier is up). `ListDestinations` is reserved for a future server release and returns
+> `Unimplemented` until then.
 
 ## Honest consistency metadata
 

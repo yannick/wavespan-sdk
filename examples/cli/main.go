@@ -120,8 +120,10 @@ func main() {
 		budgetCmd(ctx, c.Budget(), op, rest)
 	case "lease":
 		leaseCmd(ctx, c.LeasedBudget(), op, rest)
+	case "backup":
+		backupCmd(ctx, c.Backup(), op, rest)
 	default:
-		die("unknown group %q (try: kv set hash zset coll graph vec budget lease)", group)
+		die("unknown group %q (try: kv set hash zset coll graph vec budget lease backup)", group)
 	}
 }
 
@@ -602,6 +604,78 @@ func leaseCmd(ctx context.Context, lb *wavespan.LeasedBudgetClient, op string, a
 	}
 }
 
+// ---- Backup (cluster backups to an object store) ----
+
+func backupCmd(ctx context.Context, b *wavespan.BackupClient, op string, a []string) {
+	switch op {
+	case "begin":
+		// Optional first arg selects namespaces (CSV); default = everything. Logical plane by default.
+		spec := &wavespan.BackupSpec{Planes: []wavespan.BackupPlane{wavespan.BackupPlaneLogical}}
+		if len(a) >= 1 && a[0] != "" {
+			spec.Selection = &wavespan.Selection{Namespaces: splitCSV(a[0])}
+		}
+		id, err := b.Begin(ctx, spec)
+		check("backup begin", err)
+		emit(map[string]any{"backupId": id}, "BACKUP BEGIN -> %s  (poll: backup status %s)", id, id)
+	case "status":
+		need(a, 1, "backup status <id>")
+		st, err := b.Status(ctx, a[0])
+		check("backup status", err)
+		emitMulti(st, func() {
+			fmt.Printf("BACKUP %s: status=%s phase=%s %.1f%% started=%s finished=%s\n",
+				st.GetBackupId(), st.GetStatus(), st.GetPhase(), st.GetOverallPct(), fmtMs(st.GetStartedMs()), fmtMs(st.GetFinishedMs()))
+			for _, n := range st.GetPerNode() {
+				fmt.Printf("  node %-10s phase=%s objects=%d bytes=%d done=%t\n", n.GetMemberId(), n.GetPhase(), n.GetObjects(), n.GetBytes(), n.GetDone())
+			}
+			if g := st.GetGaps(); len(g) > 0 {
+				fmt.Printf("  gaps (%d): %v\n", len(g), g)
+			}
+		})
+	case "list":
+		bs, err := b.List(ctx)
+		check("backup list", err)
+		type row struct {
+			ID, Status, Parent string
+			SizeBytes          int64
+			Partial            bool
+		}
+		out := make([]row, len(bs))
+		for i, s := range bs {
+			out[i] = row{ID: s.GetBackupId(), Status: s.GetStatus().String(), Parent: s.GetParent(), SizeBytes: s.GetSizeBytes(), Partial: s.GetPartial()}
+		}
+		emitMulti(map[string]any{"backups": out}, func() {
+			fmt.Printf("BACKUPS (%d):\n", len(out))
+			for _, s := range out {
+				kind := "full"
+				if s.Parent != "" {
+					kind = "incr<-" + s.Parent
+				}
+				fmt.Printf("  %-28s %-16s %-14s %d bytes\n", s.ID, s.Status, kind, s.SizeBytes)
+			}
+		})
+	case "delete":
+		need(a, 1, "backup delete <id> [force]")
+		force := len(a) >= 2 && (a[1] == "force" || a[1] == "true")
+		ok, err := b.Delete(ctx, a[0], force)
+		check("backup delete", err)
+		emit(map[string]any{"deleted": ok}, "BACKUP DELETE %s: deleted=%t", a[0], ok)
+	case "destinations":
+		d, err := b.ListDestinations(ctx)
+		check("backup destinations", err)
+		emitMulti(d, func() {
+			def := d.GetDefaultDestination()
+			fmt.Printf("DEFAULT destination: bucket=%q prefix=%q endpoint=%q ssl=%t (filesystem=%t)\n",
+				def.GetBucket(), def.GetPrefix(), def.GetEndpoint(), def.GetUseSsl(), d.GetDefaultIsFs())
+			for _, n := range d.GetNamed() {
+				fmt.Printf("  named %-12s bucket=%q endpoint=%q\n", n.GetName(), n.GetBucket(), n.GetEndpoint())
+			}
+			fmt.Printf("  inline credentials allowed: %t\n", d.GetAllowInlineCreds())
+		})
+	default:
+		die("unknown backup op %q (begin status list delete destinations)", op)
+	}
+}
+
 // ---- helpers ----
 
 func readOpts() []wavespan.ReadOption { return nil } // placeholder for future read tuning
@@ -750,6 +824,13 @@ func fmtTime(t *time.Time) string {
 	return t.Format(time.RFC3339)
 }
 
+func fmtMs(ms int64) string {
+	if ms == 0 {
+		return "—"
+	}
+	return time.UnixMilli(ms).Format(time.RFC3339)
+}
+
 func need(a []string, n int, usage string) {
 	if len(a) < n {
 		die("usage: %s", usage)
@@ -784,6 +865,7 @@ groups & ops:
   budget  define <b> <cap> [strict|relaxed] | grant <b> <holder> <amt> [leaseID]
           report/return <b> <leaseID> <holder> <spentCumulative> | reconcile <b> <trueAcked> | stat <b>
   lease   spend <b> <n>
+  backup  begin [namespaces-csv] | status <id> | list | delete <id> [force] | destinations
 
 global flags:
 `)
